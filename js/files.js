@@ -33,9 +33,9 @@ export async function analyze(file, onStep) {
   return { original, pages, text, name: file.name };
 }
 
-export async function storeAnalyzed(info, { padEven = true, compression = S.settings.compression, tabId, onStep } = {}) {
+export async function storeAnalyzed(info, { padEven = true, compression = S.settings.compression, tabId, onStep, noDrive = false } = {}) {
   onStep && onStep('Сжимаю файл…');
-  const c = info.kind === 'docx'
+  const c = info.kind === 'docx' || info.kind === 'xlsx' || info.kind === 'other'
     ? { bytes: info.original, mode: 'none' }
     : await compress(info.original, compression, (i, n) => onStep && onStep(`Сжимаю: страница ${i} из ${n}`));
   const key = uid();
@@ -54,7 +54,7 @@ export async function storeAnalyzed(info, { padEven = true, compression = S.sett
     kind: info.kind || 'pdf',
     tags: info.tags || null,
   };
-  if (driveOn() && S.settings.drive.autoSync) {
+  if (driveOn() && S.settings.drive.autoSync && !noDrive) {
     onStep && onStep('Копирую на Google Диск…');
     try {
       const tab = tabId ? tabById(tabId) : null;

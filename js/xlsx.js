@@ -149,3 +149,77 @@ export async function fillYach(bytes, data) {
 }
 
 export const isXlsx = (meta) => !!meta && (meta.kind === 'xlsx' || /\.xlsx$/i.test(meta.name || ''));
+
+// Простое заполнение ячеек готового бланка (табель): стиль ячейки сохраняется, формулы не трогаем.
+const colNum = (c) => [...c].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+export async function setCells(bytes, values) {
+  const { zip, sheetPath } = await openBook(bytes);
+  let sheet = await zip.file(sheetPath).async('string');
+  for (const [ref, text] of Object.entries(values)) {
+    const [, col, rowS] = ref.match(/^([A-Z]+)(\d+)$/);
+    const rowRe = new RegExp(`<row [^>]*?r="${rowS}"[^>]*?(?:/>|>[\\s\\S]*?</row>)`);
+    const rm = sheet.match(rowRe);
+    if (!rm) continue; // строки нет в бланке — пропускаем
+    let row = rm[0];
+    if (row.endsWith('/>')) row = row.replace(/\/>$/, '></row>');
+    const cell = cellOf(row, ref);
+    const s = (cell.match(/ s="(\d+)"/) || [])[1] || '0';
+    const nc = str(ref, s, text);
+    if (cell) row = row.replace(cell, nc);
+    else {
+      // вставляем по порядку колонок
+      const cells = [...row.matchAll(/<c r="([A-Z]+)\d+"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)];
+      const after = cells.filter((m) => colNum(m[1]) < colNum(col)).pop();
+      row = after ? row.replace(after[0], after[0] + nc) : row.replace(/(<row [^>]*>)/, `$1${nc}`);
+    }
+    sheet = sheet.replace(rm[0], row);
+  }
+  return closeBook(zip, sheetPath, sheet);
+}
+
+// Заполнение нескольких листов по именам; формулы остаются, Excel пересчитает их при открытии.
+export async function setSheetsCells(bytes, bySheet) {
+  const JSZip = await loadZip();
+  const zip = await JSZip.loadAsync(bytes);
+  const wb = await zip.file('xl/workbook.xml').async('string');
+  const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
+  const unxml = (t) => t.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+  for (const [name, values] of Object.entries(bySheet)) {
+    const sm = [...wb.matchAll(/<sheet [^>]*name="([^"]+)"[^>]*r:id="([^"]+)"[^>]*\/>/g)].find((m) => unxml(m[1]) === name);
+    if (!sm) throw new Error('В файле нет листа «' + name + '»');
+    const rm = rels.match(new RegExp(`<Relationship [^>]*Id="${sm[2]}"[^>]*Target="([^"]+)"`)) || rels.match(new RegExp(`<Relationship [^>]*Target="([^"]+)"[^>]*Id="${sm[2]}"`));
+    const path = 'xl/' + rm[1].replace(/^\/?xl\//, '').replace(/^\.\//, '');
+    let sheet = await zip.file(path).async('string');
+    for (const [ref, val] of Object.entries(values)) sheet = putCell(sheet, ref, val);
+    zip.file(path, sheet);
+  }
+  // пересчёт при открытии и без устаревшей цепочки вычислений
+  zip.file('xl/workbook.xml', /<calcPr/.test(wb) ? wb.replace(/<calcPr([^>]*?)\s*\/>/, (m, a) => `<calcPr${a.replace(/\s*fullCalcOnLoad="\d"/, '')} fullCalcOnLoad="1"/>`) : wb.replace('</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>'));
+  if (zip.file('xl/calcChain.xml')) {
+    zip.remove('xl/calcChain.xml');
+    const ct = await zip.file('[Content_Types].xml').async('string');
+    zip.file('[Content_Types].xml', ct.replace(/<Override PartName="\/xl\/calcChain\.xml"[^>]*\/>/, ''));
+    zip.file('xl/_rels/workbook.xml.rels', rels.replace(/<Relationship [^>]*Target="calcChain\.xml"[^>]*\/>/, ''));
+  }
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+function putCell(sheet, ref, val) {
+  const [, col, rowS] = ref.match(/^([A-Z]+)(\d+)$/);
+  const num = typeof val === 'number' || /^\d+$/.test(String(val ?? '').trim());
+  const mk = (s) => (val === '' || val == null ? `<c r="${ref}" s="${s}"/>` : num ? `<c r="${ref}" s="${s}"><v>${Number(val)}</v></c>` : str(ref, s, val));
+  const rowRe = new RegExp(`<row [^>]*?r="${rowS}"[^>]*?(?:/>|>[\\s\\S]*?</row>)`);
+  const rm = sheet.match(rowRe);
+  if (!rm) return sheet;
+  let row = rm[0];
+  if (row.endsWith('/>')) row = row.replace(/\/>$/, '></row>');
+  const cell = cellOf(row, ref);
+  const s = (cell.match(/ s="(\d+)"/) || [])[1] || '0';
+  if (cell) row = row.replace(cell, mk(s));
+  else {
+    const cells = [...row.matchAll(/<c r="([A-Z]+)\d+"[^>]*?(?:\/>|>[\s\S]*?<\/c>)/g)];
+    const after = cells.filter((m) => colNum(m[1]) < colNum(col)).pop();
+    row = after ? row.replace(after[0], after[0] + mk(s)) : row.replace(/(<row [^>]*>)/, `$1${mk(s)}`);
+  }
+  return sheet.replace(rm[0], row);
+}

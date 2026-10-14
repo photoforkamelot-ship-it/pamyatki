@@ -291,6 +291,13 @@ textarea.input { resize: vertical; line-height: 1.45; }
 .badge { font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 0; text-transform: lowercase; }
 .badge.yellow { background: rgba(255, 214, 10, 0.55); color: #4d3800; }
 .badge.red { background: var(--red); color: #fff; box-shadow: 0 2px 8px var(--red-bg); }
+.badge.hot { background: var(--accent, #0a84ff); color: #fff; }
+.badge.ok { background: rgba(52, 199, 89, 0.22); color: #11612a; }
+.doc-row.is-hot { box-shadow: inset 3px 0 0 var(--accent, #0a84ff); background: rgba(10, 132, 255, 0.07); }
+.doc-row.is-off { opacity: 0.55; }
+.team { margin-top: 12px; }
+.team .plain-list li { padding: 3px 0; }
+.muted { color: var(--muted); }
 
 .banner { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 22px; border: 0; text-align: left; }
 .banner.stale { background: var(--red-bg); color: var(--ink); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--red) 35%, transparent); }

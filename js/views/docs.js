@@ -1,6 +1,6 @@
 // Вкладка со списком документов: Инструкции, наборные вкладки, часть «Памяток».
-import { h, icon, fmtDate, fmtSize, pages as pagesWord, plural, baseName, uid } from '../util.js';
-import { S, update, activeFile, setActiveFile, makeDoc, dependValue, DEPENDS, sessionLabel } from '../store.js';
+import { h, icon, fmtDate, fmtSize, pages as pagesWord, plural, baseName, uid, shortFio } from '../util.js';
+import { S, update, activeFile, setActiveFile, makeDoc, dependValue, DEPENDS, sessionLabel, docApplies, whenLabel } from '../store.js';
 import { openModal, confirmDlg, choiceDlg, promptDlg, pickFiles, toast, withBusy, menu, toggle } from '../ui.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
 import { buildPrint, renderThumbs, diffText, blocksToPdf } from '../pdf.js';
@@ -9,6 +9,9 @@ import { GENERATORS, baseValues, templateRuns } from '../generators.js';
 import { fillDocx, isDocx } from '../docx.js';
 import { renderBlocks } from '../pages.js';
 import { tabSettingsDlg } from './settings.js';
+import { kicOverlay, buildJournal } from '../process.js';
+import { setCells } from '../xlsx.js';
+import { fetchDriveDoc } from './materials.js';
 
 // ---------- вспомогательное ----------
 // «Не распечатан» — в текущей командировке; «просрочен» — с прошлой командировки
@@ -18,10 +21,22 @@ const isStale = (d) => !!d.skippedSession && d.skippedSession !== sid();
 // Шаблонные памятки: исходный Word-файл пользователя, в котором меняется только текст
 const genTplCap = (d) => d.generator && GENERATORS[d.generator] && GENERATORS[d.generator].tpl;
 const genWord = (d) => d.generator && GENERATORS[d.generator] && GENERATORS[d.generator].word;
+const genExcel = (d) => d.generator && GENERATORS[d.generator] && GENERATORS[d.generator].excel;
 const genTpl = (d) => !!(genTplCap(d) && d.file && isDocx(d.file));
+// Свой шаблон для региона (таблички возврата СФО — без ящика и крышки)
+const tplFile = (d) => (d.tplVariants && d.tplVariants[S.session.region]) || d.file;
+const xlsxRows = (d) => Object.keys(d.xvariants || {}).map(Number).sort((a, b) => a - b);
 const wordFile = (d) => { const f = activeFile(d); return !d.generator && isDocx(f) ? f : null; };
 const isWordDoc = (d) => !!(genTpl(d) || wordFile(d));
-const hasContent = (d) => (genWord(d) ? !!d.file : !!(d.generator || activeFile(d)));
+const hasFile = (d) => (genWord(d) ? !!d.file : genExcel(d) ? xlsxRows(d).length > 0 : !!(d.generator || activeFile(d)));
+const hasContent = (d) => docApplies(d) && hasFile(d);
+// КИЦ для текущего сеанса: введён вручную или найден по городу в справочнике (если его нет в таблице памятки)
+export function kicFor(s = S.session) {
+  if (s.kic && (s.kic.name || s.kic.email)) return s.kic;
+  const low = (x) => String(x || '').trim().toLowerCase();
+  const k = (S.lists.kic || []).find((x) => low(x.city) === low(s.city));
+  return k && !k.inTable ? k : null;
+}
 const sectionDuplex = (tab, sec) => (sec.printMode || tab.settings.printMode) === 'duplex';
 
 export function tabDocs(tab) {
@@ -116,8 +131,14 @@ function renderRow(tab, sec, d, sel) {
   const checkId = 'c' + d.id;
   let meta = [];
   let needs = null;
-  if (genTplCap(d)) {
-    if (d.file) meta.push('ваш Word-шаблон · меняются только ОСП, адрес, ФИО');
+  if (!docApplies(d)) needs = null, meta.push('не для этого магазина · только ' + whenLabel(d));
+  else if (genExcel(d)) {
+    if (xlsxRows(d).length) meta.push(`ваш бланк Excel · строк на выбор: ${xlsxRows(d)[0]}–${xlsxRows(d).slice(-1)[0]}`);
+    else needs = 'Бланк Excel не загружен';
+  }
+  else if (d.drive && !activeFile(d)) needs = 'Скачать с Google Диска';
+  else if (genTplCap(d)) {
+    if (d.file) meta.push((d.tplVariants && d.tplVariants[S.session.region] ? `шаблон для ${S.session.region}` : 'ваш Word-шаблон') + ' · меняются только ОСП, адрес, ФИО');
     else if (genWord(d)) needs = 'Загрузите Word-шаблон';
     else meta.push('шаблон не загружен — печатается упрощённая версия');
   }
@@ -127,8 +148,11 @@ function renderRow(tab, sec, d, sel) {
   if (d.dependsOn && dependValue(d.dependsOn)) meta.unshift(dependValue(d.dependsOn));
   if (file && isDocx(file)) {
     meta.push('загружено ' + fmtDate(file.uploadedAt), 'Word' + (file.tags && file.tags.length ? ` · меток: ${file.tags.length}` : ''), fmtSize(file.size));
+  } else if (file && d.process && d.process.type === 'journal') {
+    meta.push(`обложка + ${d.process.sheets || 90} ${plural(d.process.sheets || 90, 'лист', 'листа', 'листов')} бланков (двусторонняя)`);
   } else if (file) {
-    meta.push('загружено ' + fmtDate(file.uploadedAt));
+    if (d.process && d.process.type === 'kic') { const k = kicFor(); meta.push(k ? `КИЦ: ${k.name || k.email} — ${d.process.mode === 'over' ? 'поверх последней строки' : 'под таблицей'}` : 'КИЦ города уже в таблице'); }
+    if (d.drive) meta.push('с Google Диска'); else meta.push('загружено ' + fmtDate(file.uploadedAt));
     const pad = duplex && file.padEven !== false && file.pages % 2;
     meta.push(pagesWord(file.pages) + (pad ? ' (+1 пустая)' : ''));
     meta.push(fmtSize(file.size));
@@ -139,6 +163,7 @@ function renderRow(tab, sec, d, sel) {
     if (isNow(d)) badges.push(h('span', { class: 'badge yellow' }, 'не распечатан'));
     if (isStale(d)) badges.push(h('button', { class: 'badge red', onClick: (e) => { e.stopPropagation(); runUpdateWizard(tab, [d]); } }, 'просрочен'));
   }
+  if (d.hot && d.when && docApplies(d)) badges.push(h('span', { class: 'badge hot' }, 'для ' + whenLabel(d)));
 
   const cb = h('input', { type: 'checkbox', id: checkId, class: 'check', disabled: !content });
   cb.checked = content && sel.has(d.id);
@@ -148,7 +173,7 @@ function renderRow(tab, sec, d, sel) {
     setSel(tab, next);
   });
 
-  return h('div', { class: 'doc-row' + (isNow(d) ? ' is-skipped' : '') + (isStale(d) ? ' is-stale' : '') + (!content ? ' is-empty' : '') },
+  return h('div', { class: 'doc-row' + (isNow(d) ? ' is-skipped' : '') + (isStale(d) ? ' is-stale' : '') + (!content ? ' is-empty' : '') + (d.hot && d.when && docApplies(d) ? ' is-hot' : '') + (!docApplies(d) ? ' is-off' : '') },
     h('label', { class: 'check-wrap', for: checkId }, cb, h('span', { class: 'check-box', 'aria-hidden': 'true' })),
     h('div', { class: 'doc-main' },
       h('div', { class: 'doc-title-row' },
@@ -156,7 +181,7 @@ function renderRow(tab, sec, d, sel) {
         S.settings.showPencil ? h('button', { class: 'pencil', 'aria-label': 'Переименовать', onClick: () => rename(d) }, icon('pencil')) : null,
         ...badges,
       ),
-      needs ? h('button', { class: 'doc-needs', onClick: () => (d.dependsOn && !dependValue(d.dependsOn)) ? toast('Заполните вводные в начале вкладки «Памятки»') : uploadInto(tab, d) }, needs, d.dependsOn && !dependValue(d.dependsOn) ? null : ' · загрузить') : null,
+      needs ? h('button', { class: 'doc-needs', onClick: () => (d.drive && !activeFile(d)) ? fetchDriveDoc(d).catch((e) => toast(e.message, 'warn')) : (d.dependsOn && !dependValue(d.dependsOn)) ? toast('Заполните вводные в начале вкладки «Памятки»') : uploadInto(tab, d) }, needs, d.drive || (d.dependsOn && !dependValue(d.dependsOn)) ? null : ' · загрузить') : null,
       meta.length ? h('div', { class: 'doc-meta' }, meta.join(' · ')) : null,
     ),
     tab.settings.perItemPrint && content ? h('button', { class: 'icon-btn', 'aria-label': 'Печать документа', onClick: () => printDocs(tab, [{ doc: d, sec }], { single: true }) }, icon('print')) : null,
@@ -167,8 +192,22 @@ function renderRow(tab, sec, d, sel) {
 // ---------- меню ----------
 function docMenu(tab, sec, d) {
   const file = activeFile(d);
+  const pr = d.process || {};
   menu(d.title, [
     !d.generator ? { label: file ? 'Обновить файл' : 'Загрузить файл', onClick: () => (file ? runUpdateWizard(tab, [d]) : uploadInto(tab, d)) } : null,
+    d.drive ? { label: 'Проверить обновление на Google Диске', onClick: () => fetchDriveDoc(d, { force: true }).catch((e) => toast(e.message, 'warn')) } : null,
+    pr.type === 'kic' ? { label: 'КИЦ для этого магазина…', onClick: () => kicDlg() } : null,
+    pr.type === 'kic' ? { label: 'Строка КИЦ: ' + (pr.mode === 'over' ? 'поверх последней строки' : 'под таблицей'), onClick: async () => {
+      const v = await choiceDlg('Куда печатать строку КИЦ', 'На странице «Заказ размена» под таблицей КИЦ.', [
+        { label: 'Под последней строкой', value: 'below', kind: pr.mode !== 'over' ? 'primary' : 'ghost' },
+        { label: 'Поверх последней строки', value: 'over', kind: pr.mode === 'over' ? 'primary' : 'ghost' },
+      ]);
+      if (v) update(() => { d.process = { ...pr, mode: v }; });
+    } } : null,
+    pr.type === 'journal' ? { label: `Листов бланков: ${pr.sheets || 90}`, onClick: async () => {
+      const v = await promptDlg('Листов в журнале', { label: 'Двусторонняя печать: 1 лист = 2 страницы бланка', value: String(pr.sheets || 90), type: 'number' });
+      if (v && Number(v) > 0) update(() => { d.process = { ...pr, sheets: Math.round(Number(v)) }; });
+    } } : null,
     hasContent(d) ? { label: 'Просмотр', onClick: () => preview(tab, d) } : null,
     { label: 'Переименовать', onClick: () => rename(d) },
     !d.generator ? { label: 'Зависимость от вводных: ' + DEPENDS.find((x) => x.value === (d.dependsOn || '')).label.toLowerCase(), onClick: () => setDepends(d) } : null,
@@ -336,7 +375,7 @@ async function uploadTemplate(tab, d) {
 // Все заполненные Word-файлы документа (для конверта кадровику — по одному на кадровика)
 async function wordOutputs(doc) {
   const tpl = genTpl(doc);
-  const file = tpl ? doc.file : activeFile(doc);
+  const file = tpl ? tplFile(doc) : activeFile(doc);
   const bytes = await getBytes(file);
   const runs = tpl ? templateRuns(doc.generator, S.session) : [{ suffix: '', values: baseValues(S.session) }];
   const out = [];
@@ -377,6 +416,69 @@ export function genBlocks(doc) {
   return { blocks: g.build(S.session), opts: g.opts || {} };
 }
 
+// Файл документа с доработками: строка КИЦ, сборка журнала
+async function docBytes(d) {
+  let bytes = await getBytes(activeFile(d));
+  const pr = d.process;
+  if (pr && pr.type === 'kic') {
+    const k = kicFor();
+    if (k) bytes = await kicOverlay(bytes, { page: pr.page || 1, mode: pr.mode || 'below', name: k.name, email: k.email });
+  }
+  if (pr && pr.type === 'journal') bytes = await buildJournal(d.cover ? await getBytes(d.cover) : null, bytes, pr.sheets || 90);
+  return bytes;
+}
+
+export async function kicDlg() {
+  const { formDlg } = await import('../ui.js');
+  const cur = kicFor() || { name: '', email: '' };
+  const v = await formDlg('КИЦ для магазина', [
+    { key: 'name', label: 'Название КИЦ', value: cur.name, placeholder: 'ОО «КИЦ …»' },
+    { key: 'email', label: 'Электронный адрес', value: cur.email, placeholder: 'KIC_…@sberbank.ru' },
+    { key: 'save', label: 'Сохранить', options: [{ value: 'yes', label: `Запомнить для города${S.session.city ? ' ' + S.session.city : ''}` }, { value: 'no', label: 'Только для этого сеанса' }] },
+  ]);
+  if (!v) return;
+  update((st) => {
+    st.session.kic = { name: v.name || '', email: v.email || '' };
+    if (v.save !== 'no' && st.session.city) {
+      const low = (x) => String(x || '').trim().toLowerCase();
+      const list = st.lists.kic = st.lists.kic || [];
+      const ex = list.find((x) => low(x.city) === low(st.session.city));
+      if (ex) Object.assign(ex, { name: v.name, email: v.email, inTable: false });
+      else list.push({ city: st.session.city, name: v.name, email: v.email, inTable: false });
+    }
+  });
+  toast('КИЦ сохранён');
+}
+
+// Табель: число строк и вариант (пустой или заполненный); даты не ставятся никогда
+async function excelOutputs(doc) {
+  const rows = xlsxRows(doc);
+  const staff = (S.session.staff || []).filter((p) => p.fio);
+  const fit = rows.find((n) => n >= Math.max(staff.length, 6)) || rows[rows.length - 1];
+  const nRows = await choiceDlg('Табель: сколько строк', `Сотрудников в сеансе: ${staff.length}. Для подработчиков со стороны возьмите с запасом.`,
+    rows.map((n) => ({ label: String(n), value: n, kind: n === fit ? 'primary' : 'ghost' })));
+  if (!nRows) return [];
+  const mode = await choiceDlg('Табель', 'Даты и отчётный период не заполняются — бланк универсальный.', [
+    { label: 'Пустой (только подразделение)', value: 'blank' },
+    { label: 'С сотрудниками', value: 'full', kind: 'primary' },
+  ]);
+  if (!mode) return [];
+  const meta = doc.xvariants[nRows];
+  const foot = 33 + 2 * nRows - 16;
+  const unit = [S.session.osp ? 'ОСП ' + S.session.osp : '', S.session.city ? 'г. ' + S.session.city : '', S.session.address || ''].filter(Boolean).join(', ');
+  const unitText = await promptDlg('Структурное подразделение', { label: 'Строка над словами «наименование структурного подразделения»', value: S.session.tabelUnit || unit, okLabel: 'Готово' });
+  if (unitText === null || unitText === undefined) return [];
+  update((st) => { st.session.tabelUnit = unitText; }, { silent: true });
+  const v = { A3: unitText };
+  if (mode === 'full') {
+    staff.slice(0, nRows).forEach((p, i) => { v['C' + (16 + 2 * i)] = p.fio + (p.position ? ` (${p.position})` : ''); });
+    const mgr = S.session.manager.fio;
+    if (mgr) { v['D' + foot] = 'Управляющий магазином'; v['J' + foot] = shortFio(mgr); v['P' + foot] = shortFio(mgr); }
+  }
+  const bytes = await setCells(await getBytes(meta), v);
+  return [{ name: `${doc.title} — ${nRows} строк${mode === 'blank' ? ' — пустой' : ''}`, bytes }];
+}
+
 async function partsFor(tab, list) {
   const parts = [];
   for (const { doc, sec } of list) {
@@ -388,7 +490,7 @@ async function partsFor(tab, list) {
       parts.push({ title: doc.title, section: sec.title, pngs, size, duplex });
     } else {
       const file = activeFile(doc);
-      const bytes = await getBytes(file);
+      const bytes = await docBytes(doc);
       parts.push({ title: doc.title, section: sec.title, bytes, duplex: duplex && file.padEven !== false });
     }
   }
@@ -399,8 +501,18 @@ export async function printDocs(tab, list, { single = false, title } = {}) {
   if (!list.length) return null;
   const duplex = tab.settings.printMode === 'duplex';
   // Word-документы (ваши шаблоны) выдаются как есть, в формате Word; несколько — архивом
+  const excels = list.filter(({ doc }) => genExcel(doc));
+  list = list.filter(({ doc }) => !genExcel(doc));
+  for (const { doc } of excels) {
+    try {
+      const out = await excelOutputs(doc);
+      for (const f of out) await deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { excel: true });
+      if (out.length) update(() => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; });
+    } catch (e) { toast('Excel: ' + e.message, 'warn'); }
+  }
   const words = list.filter(({ doc }) => isWordDoc(doc));
   list = list.filter(({ doc }) => !isWordDoc(doc));
+  if (!list.length && !words.length) return excels.length ? true : null;
   if (words.length) {
     try {
       const files = await withBusy('Заполняю шаблоны Word…', async () => (await Promise.all(words.map(({ doc }) => wordOutputs(doc)))).flat());
@@ -587,13 +699,15 @@ async function docImages(d, width) {
     const f = genTpl(d) ? d.file : activeFile(d);
     return [h('div', { class: 'note' }, 'Word-файл. Предпросмотр недоступен — нажмите «Печать», чтобы получить заполненный файл. ' + (f && f.tags && f.tags.length ? 'Метки: ' + f.tags.map((t) => '{{' + t + '}}').join(', ') : ''))];
   }
+  if (genExcel(d)) return [h('div', { class: 'note' }, 'Бланк Excel. Нажмите «Печать»: выберите число строк и вариант — пустой или с сотрудниками.')];
   if (d.generator) {
     const { blocks, opts } = genBlocks(d);
     const canv = await renderBlocks(blocks, opts);
     return canv.map((c) => { const img = h('img', { src: c.toDataURL('image/png'), alt: d.title, style: { width: width + 'px' } }); return img; });
   }
-  const b = await getBytes(activeFile(d));
-  return renderThumbs(b, { count: 12, width });
+  const b = await docBytes(d);
+  const pr = d.process || {};
+  return renderThumbs(b, { count: 12, width, pages: pr.type === 'kic' ? [pr.page || 1, 2, 3, 4] : undefined });
 }
 
 async function preview(tab, d) {

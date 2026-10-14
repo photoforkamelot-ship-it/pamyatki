@@ -10,6 +10,8 @@
  */
 
 var ROOT_NAME = 'Памятки ОСП';
+var CHUNK = 15 * 1024 * 1024; // большие файлы отдаём частями: лимит веб-скрипта ~50 МБ на ответ
+var DOCX_MIME = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 var STATE_NAME = 'state.json';
 
 function doGet() {
@@ -66,6 +68,42 @@ var ACTIONS = {
   getState: function () {
     var it = root_().getFilesByName(STATE_NAME);
     return { json: it.hasNext() ? it.next().getBlob().getDataAsString('UTF-8') : '' };
+  },
+
+  // ---- Материалы к открытию: чтение общей папки, к которой у вашего аккаунта есть доступ ----
+  listFolder: function (req) {
+    var folder = DriveApp.getFolderById(req.folderId);
+    var out = [];
+    walk_(folder, '', out, req.depth == null ? 3 : Number(req.depth));
+    return { folder: folder.getName(), files: out };
+  },
+
+  fileInfo: function (req) {
+    return { file: info_(DriveApp.getFileById(req.id), '') };
+  },
+
+  getExternal: function (req) {
+    var f = DriveApp.getFileById(req.id);
+    var mime = f.getMimeType();
+    var auth = { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() };
+    if (mime.indexOf('application/vnd.google-apps') === 0) {
+      // Google Документ / Таблица — выгружаем в Word / PDF
+      var exp = req.exportMime || (mime === 'application/vnd.google-apps.document' ? DOCX_MIME : 'application/pdf');
+      var r = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + req.id + '/export?mimeType=' + encodeURIComponent(exp), { headers: auth, muteHttpExceptions: true });
+      if (r.getResponseCode() >= 300) throw new Error('Не удалось выгрузить файл: код ' + r.getResponseCode());
+      var b = r.getContent();
+      return { base64: Utilities.base64Encode(b), mime: exp, size: b.length, offset: 0, done: true };
+    }
+    var size = f.getSize();
+    var off = Number(req.offset || 0);
+    var len = Math.min(Number(req.length || CHUNK), CHUNK);
+    if (off === 0 && size <= len) return { base64: Utilities.base64Encode(f.getBlob().getBytes()), mime: mime, size: size, offset: 0, done: true };
+    var end = Math.min(off + len, size) - 1;
+    var resp = UrlFetchApp.fetch('https://www.googleapis.com/drive/v3/files/' + req.id + '?alt=media&supportsAllDrives=true', {
+      headers: { Authorization: auth.Authorization, Range: 'bytes=' + off + '-' + end }, muteHttpExceptions: true,
+    });
+    if (resp.getResponseCode() >= 300) throw new Error('Не удалось скачать часть файла: код ' + resp.getResponseCode());
+    return { base64: Utilities.base64Encode(resp.getContent()), mime: mime, size: size, offset: off, done: end + 1 >= size };
   },
 
   sendDocument: function (req, who) {
@@ -157,6 +195,21 @@ function checkInside_(file) {
     while (up.hasNext()) if (up.next().getId() === rootId) return;
   }
   throw new Error('Файл вне папки приложения');
+}
+
+function info_(f, path) {
+  return { id: f.getId(), name: f.getName(), mime: f.getMimeType(), size: f.getSize(), modified: f.getLastUpdated().toISOString(), path: path, url: f.getUrl() };
+}
+
+function walk_(folder, path, out, depth) {
+  var it = folder.getFiles();
+  while (it.hasNext()) out.push(info_(it.next(), path));
+  if (depth <= 0) return;
+  var sub = folder.getFolders();
+  while (sub.hasNext()) {
+    var f = sub.next();
+    walk_(f, path ? path + ' / ' + f.getName() : f.getName(), out, depth - 1);
+  }
 }
 
 function json_(o) {

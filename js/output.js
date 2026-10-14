@@ -14,7 +14,7 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
   const ext = zip ? '.zip' : excel ? '.xlsx' : word ? '.docx' : '.pdf';
   const mime = zip ? 'application/zip' : excel ? XLSX : word ? DOCX : 'application/pdf';
   const office = word || excel || zip;
-  const name = filename.replace(/[\\/:*?"<>|]+/g, ' ').trim() + ext;
+  const name = filename.replace(/\s*\/\s*/g, ' - ').replace(/[\\/:*?"<>|]+/g, ' ').trim() + ext;
   const n = office ? 0 : await pageCount(bytes);
   haptic('success');
   const blob = new Blob([bytes], { type: mime });

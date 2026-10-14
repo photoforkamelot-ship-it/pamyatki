@@ -76,3 +76,26 @@ const autoPush = debounce(async () => {
 }, 4000);
 
 onSaved(() => autoPush());
+
+// ---- Материалы из общей папки (через ваш скрипт) ----
+export const listFolder = (folderId, depth = 3) => call('listFolder', { folderId, depth });
+export const fileInfo = (id) => call('fileInfo', { id }).then((r) => r.file);
+
+// Большой файл скачивается частями по 15 МБ и собирается здесь
+export async function fetchExternal(id, onProgress) {
+  const parts = [];
+  let offset = 0, size = 0, mime = '';
+  for (let guard = 0; guard < 40; guard++) {
+    const r = await call('getExternal', { id, offset });
+    const b = base64ToBytes(r.base64);
+    parts.push(b);
+    size = r.size || b.length; mime = r.mime || mime;
+    offset += b.length;
+    onProgress && onProgress(Math.min(offset, size), size);
+    if (r.done || !b.length) break;
+  }
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let pos = 0;
+  for (const p of parts) { out.set(p, pos); pos += p.length; }
+  return { bytes: out, mime };
+}

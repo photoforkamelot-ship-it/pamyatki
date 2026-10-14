@@ -149,7 +149,7 @@ export function formDlg(title, fields, okLabel = 'Сохранить') {
     } else {
       input = h('input', { class: 'input', id, type: f.type || 'text', placeholder: f.placeholder || '', inputmode: f.inputmode });
     }
-    input.value = f.value ?? '';
+    if (!f.options || f.value != null) input.value = f.value ?? '';
     inputs[f.key] = input;
     return h('div', { class: 'field' }, h('label', { for: id }, f.label), input);
   }));

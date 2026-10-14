@@ -92,6 +92,11 @@ export function autoLunch(i) {
 }
 
 export const GENERATORS = {
+  tabel: {
+    excel: true,
+    label: 'Табель учёта рабочего времени',
+    build() { return [{ t: 'p', text: 'Табель печатается файлом Excel по вашему бланку. Перед печатью выберите число строк и вариант: пустой или заполненный.' }]; },
+  },
   envHr: {
     tpl: true,
     label: 'Конверт кадровику',
@@ -209,6 +214,20 @@ export const GENERATORS = {
     label: 'Контакты для директора',
     build(s) {
       const line = (k, n) => { const c = contact(k, n); return c ? [c.name, c.phone].filter(Boolean).join(', ') : n || ''; };
+      // таблица контактов региона (вкладка «Контакты») — в вашем виде
+      const dir = (S.directory || {})[s.region] || [];
+      if (dir.length) {
+        const rows = [['ФИО', 'Направление', 'Телефон', 'Почта / примечание'].map((t) => ({ t, bold: true, fill: '#efefef' }))];
+        for (const r of dir) {
+          if (r.section) rows.push([{ t: r.section, bold: true, fill: '#f6f6f6', span: 4 }]);
+          else rows.push([{ t: r.name, bold: true }, r.dept || '', (r.phone || '').replace(/,\s*/g, '\n'), r.email || '']);
+        }
+        return [
+          { t: 'center', text: 'Контакты · ' + s.region, size: 15, bold: true, gap: 0 },
+          { t: 'center', text: [sessionLabel(s), s.address, s.manager.fio ? 'Управляющий: ' + [s.manager.fio, s.manager.phone].filter(Boolean).join(', ') : ''].filter(Boolean).join(' · '), size: 9, color: '#555', gap: 8 },
+          { t: 'xtable', cols: [1.5, 2.1, 1.3, 1.6], rows, headRows: 1, size: 8.5, pad: 3 },
+        ];
+      }
       return [
         { t: 'h1', text: 'Контакты', sub: [sessionLabel(s), s.address].filter(Boolean).join(' · ') },
         { t: 'kv', rows: [['Город', s.city], ['ОСП', s.osp], ['Адрес', s.address], ['Управляющий', [s.manager.fio, s.manager.phone].filter(Boolean).join(', ')], ['Регион', s.region], ['Склад (РЦ)', s.warehouse]] },
@@ -287,6 +306,7 @@ export function baseValues(s) {
   const v = {
     ОСП: s.osp || '', ГОРОД: s.city || '', АДРЕС: s.address || '',
     АДРЕС_ВЕРХ: up(cityLine(s)), АДРЕС_ПОЛН: cityLine(s),
+    АДРЕС_КОМП: up(s.city ? `г.${s.city}, ${(s.address || '').trim()}`.replace(/,\s*$/, '') : (s.address || '')),
     ОТ: up(shortFio(s.manager.fio)), ТЕЛ: s.manager.phone || '',
     УПРАВЛЯЮЩИЙ: s.manager.fio || '', УПР_КРАТКО: shortFio(s.manager.fio), УПР_ОБЕД: s.lunchMgr || '15:00-16:00',
     ГОД: String(new Date().getFullYear()), ДАТА: fmtDate(new Date()),

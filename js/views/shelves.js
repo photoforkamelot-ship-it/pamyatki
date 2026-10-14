@@ -5,6 +5,41 @@ import { openModal, confirmDlg, promptDlg, toast, withBusy, formDlg, menu } from
 import { blocksToPdf, buildPrint } from '../pdf.js';
 import { deliver } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
+import { setSheetsCells } from '../xlsx.js';
+import { getBytes } from '../files.js';
+import { choiceDlg } from '../ui.js';
+
+const DRAFT = 'ДЕЛЕНИЯ ЧЕРНОВИК для РЕДАКТИРОВ';
+const PRINT = 'ПЕЧАТЬ';
+const colN = (c) => [...c].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+const colL = (n) => { let s = ''; while (n) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+
+// Ваш файл делений: значения пишутся в лист-черновик, а лист «ПЕЧАТЬ» сам подтягивает их формулами.
+// Названия и оформление карточек не меняются; для выбранных карточек ставится нужная высота (2,20 / 1,80).
+export async function shelvesXlsx(items) {
+  const draft = {}, print = {};
+  for (const it of S.shelves.catalog) {
+    if (!it.src || !it.xl) continue;
+    const [, c, r] = it.src.match(/^([A-Z]+)(\d+)$/);
+    const col = colN(c), row = Number(r);
+    const p = pick(it.id);
+    it.variants.slice(0, 2).forEach((v, vi) => {
+      const sel = p && p.on && (p.v || 0) === vi ? { reinforced: p.reinforced, variant: v } : null;
+      for (let lvl = 10; lvl >= 1; lvl--) {
+        const raw = (v.levels || {})[String(lvl)];
+        const val = raw === undefined || raw === '' ? ' ' : gapValue(raw, v.reinforced, sel ? !!sel.reinforced : v.reinforced);
+        draft[colL(col + vi) + (row + 5 + (10 - lvl))] = val;
+      }
+    });
+    if (p && p.on) {
+      const w = p.width || '';
+      if (w && w !== it.width) draft[colL(col) + (row + 1)] = `(${w})`;
+      const lab = it.xl.labels[p.v || 0];
+      if (lab) print[colL(col + 2) + (row - 1)] = lab;
+    }
+  }
+  return setSheetsCells(await getBytes(S.shelves.xlsxTpl), { [DRAFT]: draft, [PRINT]: print });
+}
 
 const WIDTHS = ['65', '80', '100', '125'];
 let filter = '';
@@ -213,6 +248,19 @@ export async function deleteShelfItem(it) {
 async function printShelves() {
   const perPage = cur().perPage || 2;
   const items = S.shelves.groupsOrder.flatMap((g) => S.shelves.catalog.filter((it) => it.group === g && pick(it.id) && pick(it.id).on));
+  if (S.shelves.xlsxTpl) {
+    const how = await choiceDlg('Деления', 'Excel — ваш файл с листом «ПЕЧАТЬ»: шрифты, рамки и окошки как в оригинале. PDF — карточки, собранные приложением.', [
+      { label: 'PDF', value: 'pdf' }, { label: 'Excel (лист «ПЕЧАТЬ»)', value: 'xlsx', kind: 'primary' },
+    ]);
+    if (!how) return;
+    if (how === 'xlsx') {
+      try {
+        const bytes = await withBusy('Заполняю ваш файл делений…', () => shelvesXlsx(items));
+        const noXl = items.filter((it) => !it.src);
+        return deliver(bytes, `Деления — ${sessionLabel(S.session)}`, { excel: true, note: `Печатайте лист «ПЕЧАТЬ». Выбрано карточек: ${items.length}: ${items.map((it) => it.name).join(', ')}.` + (noXl.length ? ` Нет в файле (будут только в PDF): ${noXl.map((it) => it.name).join(', ')}.` : '') });
+      } catch (e) { toast('Excel: ' + e.message, 'warn'); return; }
+    }
+  }
   const blocks = items.map((it) => cardBlock(it, perPage));
   try {
     const bytes = await withBusy('Собираю карточки…', async () => {

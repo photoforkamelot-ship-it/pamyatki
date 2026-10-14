@@ -29,7 +29,7 @@ export async function applyStarter(pack, step = () => {}) {
     const bytes = base64ToBytes(f.base64);
     const file = new File([bytes], f.name);
     const info = /\.xlsx$/i.test(f.name) ? { original: bytes, pages: 0, text: '', name: f.name, kind: 'xlsx' } : await analyze(file);
-    const meta = await storeAnalyzed(info, { compression: 'light', tabId: 'memos' });
+    const meta = await storeAnalyzed(info, { compression: f.compression || 'light', tabId: 'memos', padEven: f.padEven !== false });
     files.push({ f, meta });
   }
   update((s) => {
@@ -51,7 +51,7 @@ export async function applyStarter(pack, step = () => {}) {
       done.push(`контакты (${n})`);
     }
     if (pack.shelves && pack.shelves.length) {
-      s.shelves.catalog = pack.shelves.map((c) => ({ id: uid(), name: c.name, sub: c.sub || '', group: c.group, kind: c.kind, width: c.width || '', widthSelectable: !c.width, variants: c.variants, note: c.note || '' }));
+      s.shelves.catalog = pack.shelves.map((c) => ({ id: uid(), name: c.name, sub: c.sub || '', group: c.group, kind: c.kind, width: c.width || '', widthSelectable: !c.width, variants: c.variants, note: c.note || '', src: c.src || '', xl: c.xl || null }));
       const groups = [...new Set(pack.shelves.map((c) => c.group))];
       s.shelves.groupsOrder = [...groups, ...s.shelves.groupsOrder.filter((g) => !groups.includes(g))];
       s.shelves.current.items = {};
@@ -69,9 +69,41 @@ export async function applyStarter(pack, step = () => {}) {
     }
     if (pack.schedule) Object.assign(s.schedule, pack.schedule);
     const memos = s.tabs.find((t) => t.id === 'memos');
+    const secOf = (key) => memos.sections.find((x) => x.key === key) || memos.sections[memos.sections.length - 1];
+    // пустые заглушки (без файла и генератора) в разделах, которые пакет заполняет сам
+    for (const key of pack.cleanSections || []) {
+      const sec = secOf(key);
+      sec.items = sec.items.filter((id) => {
+        const d = s.docs[id];
+        const keep = d && (d.generator || d.file || Object.keys(d.variants || {}).length || d.key || d.drive);
+        if (!keep) delete s.docs[id];
+        return keep;
+      });
+    }
+    // документ по ключу: создаём или обновляем, чтобы повторная загрузка пакета не плодила копии
+    const docByKey = (spec) => {
+      const sec = secOf(spec.section);
+      let d = (spec.key ? Object.values(s.docs).find((x) => x.key === spec.key) : null)
+        || (spec.generator ? sec.items.map((id) => s.docs[id]).find((x) => x && x.generator === spec.generator) : null);
+      if (!d) { d = makeDoc('memos', spec.title); s.docs[d.id] = d; sec.items.push(d.id); }
+      for (const k of ['key', 'title', 'when', 'hot', 'process', 'dependsOn', 'generator', 'drive', 'unit']) if (spec[k] !== undefined) d[k] = spec[k];
+      return d;
+    };
+    for (const spec of pack.docs || []) docByKey(spec);
     for (const { f, meta } of files) {
       if (f.schedule) { s.schedule.templates = s.schedule.templates || {}; s.schedule.templates[f.schedule] = meta; continue; }
-      const sec = memos.sections.find((x) => x.key === f.section) || memos.sections[memos.sections.length - 1];
+      if (f.shelvesTpl) { s.shelves.xlsxTpl = meta; continue; }
+      if (f.doc) {
+        const d = docByKey(f.doc);
+        const role = f.role || 'file';
+        if (role === 'file') d.file = meta;
+        else if (role === 'cover') d.cover = meta;
+        else if (role.startsWith('variant:')) { d.variants = d.variants || {}; d.variants[role.slice(8)] = meta; }
+        else if (role.startsWith('tpl:')) { d.tplVariants = d.tplVariants || {}; d.tplVariants[role.slice(4)] = meta; }
+        else if (role.startsWith('rows:')) { d.xvariants = d.xvariants || {}; d.xvariants[role.slice(5)] = meta; }
+        continue;
+      }
+      const sec = secOf(f.section);
       if (f.generator) {
         const d = sec.items.map((id) => s.docs[id]).find((x) => x && x.generator === f.generator);
         if (d) { d.file = meta; continue; }
@@ -79,6 +111,19 @@ export async function applyStarter(pack, step = () => {}) {
       const d = makeDoc('memos', f.title || f.name.replace(/\.[^.]+$/, ''), { file: meta });
       s.docs[d.id] = d;
       sec.items.push(d.id);
+    }
+    // порядок документов в разделах
+    for (const [key, order] of Object.entries(pack.order || {})) {
+      const sec = secOf(key);
+      const rank = (id) => { const d = s.docs[id]; const i = d ? order.indexOf(d.key || d.generator) : -1; return i < 0 ? 999 : i; };
+      sec.items.sort((a, b) => rank(a) - rank(b));
+    }
+    if (pack.directory) { s.directory = {}; for (const [r, rows] of Object.entries(pack.directory)) s.directory[r] = rows.map((x) => ({ id: uid(), ...x })); done.push('контакты по регионам'); }
+    if (pack.kic) { s.lists.kic = pack.kic; done.push(`КИЦ (${pack.kic.length})`); }
+    if (pack.materials) Object.assign(s.materials, pack.materials);
+    if (pack.sessionDefaults) {
+      for (const [k, v] of Object.entries(pack.sessionDefaults.money || {})) if (!s.session.money[k]) s.session.money[k] = v;
+      s.settings.sessionDefaults = pack.sessionDefaults;
     }
     if (files.length) done.push(`файлы (${files.length})`);
     s.selection.memos = undefined;

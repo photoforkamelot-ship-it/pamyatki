@@ -10,11 +10,12 @@ import { renderPlan } from './views/plan.js';
 import { renderContracts } from './views/contracts.js';
 import { renderShelves } from './views/shelves.js';
 import { renderPeople } from './views/people.js';
+import { renderMaterials, checkDriveDocs } from './views/materials.js';
 import { renderSettings, createTab } from './views/settings.js';
 import { onboarding } from './views/session.js';
 import './drive.js';
 
-const VIEWS = { memos: renderMemos, docs: renderDocsTab, schedule: renderSchedule, plan: renderPlan, contracts: renderContracts, shelves: renderShelves, people: renderPeople };
+const VIEWS = { memos: renderMemos, docs: renderDocsTab, schedule: renderSchedule, plan: renderPlan, contracts: renderContracts, shelves: renderShelves, people: renderPeople, materials: renderMaterials };
 
 let showSettings = false;
 let reorder = false;
@@ -136,6 +137,9 @@ async function boot() {
   render();
   document.body.classList.add('ready');
   if (!S.session.city && !S.session.osp && !S.sessions.length) setTimeout(onboarding, 400);
+  // файлы «Памяток», которые живут на Google Диске (памятка сотрудникам) — проверяем обновления
+  const last = Number(localStorage.getItem('driveDocsCheck') || 0);
+  if (Date.now() - last > 6 * 3600 * 1000) setTimeout(() => { try { localStorage.setItem('driveDocsCheck', String(Date.now())); } catch (e) { /* без хранилища */ } checkDriveDocs(); }, 3000);
 }
 
 boot();

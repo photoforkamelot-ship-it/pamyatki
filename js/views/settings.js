@@ -9,7 +9,7 @@ import { ping, pullState, pushState, driveOn, uploadFile, syncStatus } from '../
 import { inTelegram, tgUser } from '../tg.js';
 import { bytesToBase64, base64ToBytes } from '../util.js';
 
-const KIND_NAMES = { people: 'Контакты по регионам', memos: 'Памятки и вводные', docs: 'Список документов', schedule: 'Сервисный график', plan: 'Опорный план', contracts: 'Договора', shelves: 'Деления' };
+const KIND_NAMES = { people: 'Контакты по регионам', memos: 'Памятки и вводные', docs: 'Список документов', schedule: 'Сервисный график', plan: 'Опорный план', contracts: 'Договора', shelves: 'Деления', materials: 'Материалы из Google Диска' };
 const isDocs = (t) => t.kind === 'docs' || t.kind === 'memos';
 
 export function tabSettingsDlg(tab) {

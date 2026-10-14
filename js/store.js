@@ -53,6 +53,10 @@ function migrate(s) {
   if (s.shelves.catalog.some((c) => !c.variants)) s.shelves.catalog = s.shelves.catalog.map(upgradeShelf);
   if (!s.contracts.version) s.contracts = { version: 2, cities: {} };
   if (!s.tabs.some((t) => t.kind === 'people')) s.tabs.push(d.tabs.find((t) => t.kind === 'people'));
+  if (!s.tabs.some((t) => t.kind === 'materials')) s.tabs.push(d.tabs.find((t) => t.kind === 'materials'));
+  if (!s.lists.warehouses.some((w) => /омск/i.test(w.name))) s.lists.warehouses.push({ name: 'РЦ Омск', region: 'СФО' });
+  if (!s.session.kic) s.session.kic = { name: '', email: '' };
+  for (const k of Object.keys(d.materials)) if (s.materials[k] === undefined) s.materials[k] = d.materials[k];
   s.version = d.version;
   return s;
 }
@@ -78,6 +82,7 @@ export function newSession(prefill = {}) {
     staff: [],
     money: { total: '', cashCount: '', perCash: [], perKkm: '', rest: '', days: [], note: '', contract: '', controllers: '' },
     stickerExtra: '',
+    kic: { name: '', email: '' },
     lunchMgr: '15:00-16:00',
     ...prefill,
   };
@@ -93,6 +98,36 @@ export function dependValue(dep, session = S.session) {
   if (!dep || !session) return '';
   if (dep === 'hr') return (session.hr || [])[0] || '';
   return session[dep] || '';
+}
+
+// Условие, при котором документ нужен в сеансе (регион, склад, город, начало кода ОСП)
+export function docApplies(d, s = S.session) {
+  const w = d && d.when;
+  if (!w) return true;
+  const low = (x) => String(x || '').trim().toLowerCase();
+  if (w.regions && w.regions.length && !w.regions.includes(s.region)) return false;
+  if (w.warehouses && w.warehouses.length && !w.warehouses.includes(s.warehouse)) return false;
+  if (w.cities && w.cities.length && !w.cities.some((c) => low(c) === low(s.city))) return false;
+  if (w.notCities && w.notCities.some((c) => low(c) === low(s.city))) return false;
+  return true;
+}
+export function whenLabel(d) {
+  const w = d && d.when;
+  if (!w) return '';
+  return [w.regions && w.regions.join(', '), w.warehouses && w.warehouses.join(', '), w.cities && w.cities.join(', '), w.notCities && w.notCities.length ? 'кроме: ' + w.notCities.join(', ') : ''].filter(Boolean).join(' · ');
+}
+
+// Склад по городу и коду ОСП: Омск и коды на «О» (О120, О010) — РЦ Омск
+export function autoWarehouse(st) {
+  const s = st.session;
+  const code = String(s.osp || '').trim();
+  const omsk = /^омск$/i.test(String(s.city || '').trim()) || /^[ОO]\d/i.test(code);
+  const wh = st.lists.warehouses.find((w) => /омск/i.test(w.name));
+  if (omsk && wh) { s.warehouse = wh.name; if (!s.region) s.region = wh.region || 'СФО'; return; }
+  if (s.warehouse && /омск/i.test(s.warehouse) && !omsk) {
+    const other = st.lists.warehouses.find((w) => w.region === s.region && !/омск/i.test(w.name));
+    if (other) s.warehouse = other.name;
+  }
 }
 
 export const DEPENDS = [
@@ -177,20 +212,12 @@ function defaultState() {
       sec('memos', 'Наклейки', [
         ['Наклейки (Word-шаблон: ОСП, адрес, ФИО)', '', 'stickersDocx'],
       ], { printMode: 'simplex', key: 'stickers' }),
-      sec('memos', 'Склад', [
-        ['Складские памятки', 'warehouse'],
-        ['Адресная табличка — шаблон ОСП с шапкой', 'warehouse'],
-        ['Склад возврата', 'warehouse'],
-      ], { key: 'warehouse' }),
+      sec('memos', 'Склад', [], { key: 'warehouse' }),
       sec('memos', 'Памятки директору', [], { printMode: 'simplex', collage: true, key: 'director' }),
       sec('memos', 'Памятки сотрудникам', [], { printMode: 'simplex', collage: true, key: 'staff' }),
-      sec('memos', 'Кассовые бланки', [
-        'ПКО', 'РКО', 'Квитанция к сумке', 'Препроводительная ведомость к сумке', 'Накладная к сумке',
-        'Бланк заказа размена', 'Бланк описи покупюрно', 'Бланк инвентаризации ДС в сейфе',
-      ], { key: 'cash' }),
+      sec('memos', 'Кассовые бланки', [], { key: 'cash' }),
       sec('memos', 'Табели и журналы', [
-        'Табель учёта рабочего времени', 'Покупюрник',
-        'Журнал обслуживания и текущего ремонта оборудования', 'Журнал обслуживания ОПС',
+        ['Табель учёта рабочего времени', '', 'tabel'],
       ], { key: 'journals' }),
     ],
   };
@@ -213,6 +240,7 @@ function defaultState() {
       { ...simple('contracts', 'contracts', 'Договора'), settings: { printMode: 'duplex', perItemPrint: false, cover: false, staleMode: 'badge' } },
       simple('shelves', 'shelves', 'Деления'),
       simple('people', 'people', 'Контакты'),
+      simple('materials', 'materials', 'Материалы к открытию'),
     ],
     activeTab: 'memos',
     docs,
@@ -224,7 +252,9 @@ function defaultState() {
         { name: 'РЦ Обухово', region: 'ЦФО' },
         { name: 'РЦ Верхняя Пышма', region: 'УФО' },
         { name: 'РЦ Толмачево', region: 'СФО' },
+        { name: 'РЦ Омск', region: 'СФО' },
       ],
+      kic: [],
       hr: [], accountants: [], legal: [], trainers: [], recruiters: [], other: [],
       pbMain: [], pbRegional: [], sbRegional: [], sbHead: [],
       roles: ['Пекарь', 'Приёмщик', 'Кассир'],
@@ -234,6 +264,16 @@ function defaultState() {
     staleAsked: {},
     schedule: { zones: [], bySession: {}, view: 'fio', yachchpMode: 'slash', blocks: SCHEDULE_BLOCKS.map((b) => ({ ...b })), peak: 'ЧАСЫ ПИК 17:00–20:00', rules: 'Выкладка товара, срок годности, дыры на полках, товар лицом к покупателю, чистота полок, ротация, ценники, ценникодержатели.' },
     plan: { items: [], done: {} },
+    directory: {},
+    materials: {
+      folderId: '', folderUrl: '',
+      groups: [
+        { id: 'rules', title: 'Правила выкладки', words: ['СФО', 'УФО', 'ЦФО', '1-й формат'] },
+        { id: 'open', title: 'Для открытия', words: ['5 метров холода', 'Инструкция выкладки ФРОВ', 'Чек-лист открытия магазина', 'уголок_потребителя', 'Шаблон письма о приемке'] },
+        { id: 'team', title: 'Рабочая группа по открытию', words: ['Порядок открытия'], participants: true },
+      ],
+      files: {}, lastCheck: null, error: '',
+    },
     contracts: { version: 2, cities: {} },
     shelves: {
       catalog: seedShelves().map(upgradeShelf),

@@ -1,6 +1,6 @@
 // Вводные сеанса: город, ОСП, срок, склад, контакты, сотрудники, размен.
 import { h, icon, fmtDate, todayISO, uid, clone } from '../util.js';
-import { S, update, newSession, sessionLabel, emit } from '../store.js';
+import { S, update, newSession, sessionLabel, emit, autoWarehouse } from '../store.js';
 import { chipSelect, formDlg, confirmDlg, choiceDlg, openModal, toast } from '../ui.js';
 import { autoLunch, dative } from '../generators.js';
 import { contactsDlg } from './settings.js';
@@ -119,8 +119,8 @@ export function renderSessionCard() {
 
   const body = h('div', { class: 'session-body' },
     h('div', { class: 'grid-2' },
-      field('Город', textInput(() => s.city, (v) => (s.city = v), { list: 'cities-list', rerender: true })),
-      field('ОСП (код магазина)', textInput(() => s.osp, (v) => (s.osp = v), { rerender: true, placeholder: 'например, АБ12' })),
+      field('Город', textInput(() => s.city, (v) => { s.city = v; autoWarehouse(S); S.selection.memos = undefined; }, { list: 'cities-list', rerender: true })),
+      field('ОСП (код магазина)', textInput(() => s.osp, (v) => { s.osp = v; autoWarehouse(S); S.selection.memos = undefined; }, { rerender: true, placeholder: 'например, АБ12' })),
       field('Адрес магазина', textInput(() => s.address, (v) => (s.address = v), { placeholder: 'пр-т Победы, 302' }), 'Без города: он подставится сам'),
       field('Работаем до', textInput(() => s.until, (v) => (s.until = v), { type: 'date', rerender: true }), 'Это срок сеанса: командировка или период запуска'),
     ),
@@ -133,12 +133,14 @@ export function renderSessionCard() {
         st.session.region = v;
         const wh = st.lists.warehouses.find((w) => w.region === v);
         if (wh) st.session.warehouse = wh.name;
+        autoWarehouse(st);
+        st.selection.memos = undefined;
       }),
       onAdd: async () => { const v = await formDlg('Новый регион', [{ key: 'name', label: 'Название, например ПФО' }]); if (v && v.name) update((st) => { st.lists.regions.push(v.name); st.session.region = v.name; }); },
     }),
     chipSelect({
       options: S.lists.warehouses, value: s.warehouse, keyOf: (o) => o.name, labelOf: (o) => o.name + (o.region ? ` · ${o.region}` : ''),
-      onChange: (v) => update((st) => { st.session.warehouse = v; }),
+      onChange: (v) => update((st) => { st.session.warehouse = v; st.selection.memos = undefined; }),
       onAdd: async () => {
         const v = await formDlg('Новый склад', [{ key: 'name', label: 'Название РЦ' }, { key: 'region', label: 'Регион', value: s.region }]);
         if (v && v.name) update((st) => { st.lists.warehouses.push({ name: v.name, region: v.region }); st.session.warehouse = v.name; });
@@ -248,6 +250,10 @@ export async function startNewSession() {
       region: cur.region, warehouse: cur.warehouse, hr: clone(cur.hr), pbMain: cur.pbMain, pbRegional: cur.pbRegional, sbHead: cur.sbHead, sbRegional: cur.sbRegional,
     } : {};
     st.session = newSession({ ...prefill, city: v.city, osp: v.osp, until: v.until });
+    const dflt = (st.settings.sessionDefaults || {}).money || {};
+    for (const [k, val] of Object.entries(dflt)) if (!st.session.money[k]) st.session.money[k] = val;
+    autoWarehouse(st);
+    st.selection.memos = undefined;
     if (v.city && !st.lists.cities.includes(v.city)) st.lists.cities.push(v.city);
   });
   toast('Новый сеанс начат');
