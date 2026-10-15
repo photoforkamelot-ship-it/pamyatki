@@ -215,3 +215,10 @@ function walk_(folder, path, out, depth) {
 function json_(o) {
   return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
 }
+
+// Запустите один раз из редактора (Выполнить → setup), чтобы выдать скрипту разрешения
+function setup() {
+  var f = root_();
+  UrlFetchApp.fetch('https://api.telegram.org', { muteHttpExceptions: true });
+  Logger.log('Папка: ' + f.getName() + ' — ' + f.getUrl());
+}

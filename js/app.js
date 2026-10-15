@@ -133,6 +133,14 @@ async function boot() {
     main.append(h('div', { class: 'card glass' }, h('p', { class: 'note warn' }, 'Не удалось открыть хранилище браузера: ' + e.message)));
     return;
   }
+  // Настройка из ссылки кнопки бота: …/pamyatki/#drive=<адрес скрипта>&chat=<id> — ключ не нужен, вход по Telegram ID
+  try {
+    const q = new URLSearchParams(location.hash.replace(/^#/, ''));
+    const url = q.get('drive');
+    if (url && /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(url) && S.settings.drive.url !== url) {
+      update((st) => { st.settings.drive.url = url; if (q.get('chat') && !st.settings.drive.chatId) st.settings.drive.chatId = q.get('chat'); }, { silent: true });
+    }
+  } catch (e) { /* без настройки */ }
   onChange(render);
   render();
   document.body.classList.add('ready');
