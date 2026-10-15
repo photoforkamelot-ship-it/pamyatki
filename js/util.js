@@ -149,3 +149,14 @@ export function icon(name) {
   s.innerHTML = icons[name] || '';
   return s;
 }
+
+// Телефон в формате 8-989-898-00-00 (пока набирается — по мере ввода)
+export function formatPhone(v) {
+  let d = String(v || '').replace(/\D/g, '');
+  if (!d) return '';
+  if (d[0] === '7') d = '8' + d.slice(1);
+  if (d[0] === '9' && d.length <= 10) d = '8' + d;
+  d = d.slice(0, 11);
+  const parts = [d.slice(0, 1), d.slice(1, 4), d.slice(4, 7), d.slice(7, 9), d.slice(9, 11)].filter(Boolean);
+  return parts.join('-');
+}

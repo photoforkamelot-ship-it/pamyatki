@@ -62,8 +62,11 @@ export async function pullState() {
 let lastSyncError = '';
 export const syncStatus = { last: null, error: '' };
 
+// Пока не сверились с Диском, своё не отправляем — иначе пустое новое устройство затрёт данные
+export const syncGate = { ready: false };
+
 const autoPush = debounce(async () => {
-  if (!driveOn() || !S.settings.drive.autoSync) return;
+  if (!driveOn() || !S.settings.drive.autoSync || !syncGate.ready) return;
   try {
     await pushState();
     syncStatus.last = new Date();

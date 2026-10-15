@@ -498,3 +498,82 @@ details.group > summary > span:first-child { flex: 1 1 auto; }
 .person-links { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .person-links .chip { min-height: 32px; font-size: 13px; text-decoration: none; }
 .shelf-name small.sub { color: var(--ink-2); font-weight: 600; }
+
+/* Выбранные чипы всегда заметны (в тёмной теме и в режиме упрощённого стекла тоже) */
+.chips .chip.on, .chip.on {
+  background: var(--accent) !important; color: var(--accent-ink, #fff) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent) !important;
+  font-weight: 600;
+}
+.chip.on::before { content: '✓'; margin-right: 6px; font-weight: 700; }
+.chip.add::before { content: none; }
+
+/* ---------- Опросник вводных ---------- */
+.wz-dots { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.wz-dot { width: 32px; height: 32px; border-radius: 50%; border: 0; font-weight: 700; font-size: 13px; background: rgba(127,127,127,.16); color: var(--ink); }
+.wz-dot.ok { background: rgba(52,199,89,.25); color: #137a33; }
+.wz-dot.need { background: var(--yellow-bg); color: var(--yellow-ink); }
+.wz-dot.cur { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wz-title { margin: 4px 0 12px; font-size: 20px; display: flex; gap: 8px; align-items: center; }
+.wz-body { display: flex; flex-direction: column; gap: 12px; }
+.wz-field label { font-weight: 600; }
+.wz-field .for { display: block; margin-top: 4px; font-size: 12px; color: var(--muted); }
+.wz-field .for::before { content: '📄 '; }
+.input.need { box-shadow: inset 0 0 0 2px #f5b400 !important; background: rgba(255, 214, 10, .10); }
+.input::placeholder { color: color-mix(in srgb, var(--muted) 75%, transparent); font-style: italic; }
+.wz-staff { padding: 10px; border-radius: 16px; background: rgba(127,127,127,.08); display: flex; flex-direction: column; gap: 8px; }
+.wz-staff-top { display: flex; gap: 8px; align-items: center; }
+.wz-staff-top .input { flex: 1; }
+.wz-num { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent); color: var(--accent-ink, #fff); font-size: 13px; font-weight: 700; flex: none; }
+.wz-plates { display: flex; flex-direction: column; gap: 6px; }
+.wz-preview { padding: 10px 12px; border-radius: 14px; background: rgba(127,127,127,.08); font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+.wz-summary { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.wz-sum-row { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 8px; padding: 10px 12px; border: 0; border-radius: 14px; text-align: left; background: rgba(127,127,127,.08); color: var(--ink); }
+.wz-sum-row small { color: var(--muted); }
+.wz-sum-ico { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+.wz-sum-row.ok .wz-sum-ico { background: rgba(52,199,89,.25); color: #137a33; }
+.wz-sum-row.need { background: var(--yellow-bg); }
+.wz-sum-row.need .wz-sum-ico { background: #f5b400; color: #fff; }
+.wz-sum-row.opt .wz-sum-ico { background: rgba(127,127,127,.2); }
+
+/* ---------- Цвета функционалов (только в приложении) ---------- */
+.role-pill.colored { background: color-mix(in srgb, var(--rc) 22%, transparent); color: color-mix(in srgb, var(--rc) 70%, #000); }
+:root[data-scheme="dark"] .role-pill.colored { color: color-mix(in srgb, var(--rc) 75%, #fff); }
+.role-block { border-left: 4px solid var(--rc, transparent); padding-left: 10px; }
+.zone-grid .zone-cell:has(.check:checked) { background: color-mix(in srgb, var(--rc) 24%, transparent); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--rc) 55%, transparent); }
+.zone-grid .check:checked + .check-box { background: var(--rc); box-shadow: 0 2px 8px color-mix(in srgb, var(--rc) 45%, transparent); }
+.zone-grid .check:checked + .check-box::after { border-color: #fff; }
+.zone-cell.common:has(.check:checked), .zone-cell.common { background-image: var(--grad, linear-gradient(90deg, #34c759, #ffcc00, #32ade6)); background-size: 100% 100%; }
+.zone-cell.common { background-blend-mode: normal; }
+.zone-cell.common:not(:has(.check:checked)) { background-image: none; box-shadow: inset 0 0 0 1.5px transparent; border: 1.5px dashed color-mix(in srgb, var(--ink) 25%, transparent); }
+.zone-cell.common:has(.check:checked) { color: #1b1b1b; }
+.zone-cell.common .check:checked + .check-box { background: conic-gradient(#34c759, #ffcc00, #32ade6, #af52de, #34c759); animation: spinhue 3s linear infinite; }
+@keyframes spinhue { to { filter: hue-rotate(360deg); } }
+.chip.zchip[style*="--rc"] { background: color-mix(in srgb, var(--rc) 24%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rc) 55%, transparent); }
+.chip.zchip.common[style*="--grad"] { background: var(--grad); color: #1b1b1b; animation: shimmer 4s linear infinite; background-size: 200% 100%; }
+@keyframes shimmer { 0% { background-position: 0 0; } 100% { background-position: 200% 0; } }
+.rc-head { background: color-mix(in srgb, var(--rc) 30%, transparent); }
+.rc-cell { background: color-mix(in srgb, var(--rc) 10%, transparent); }
+.yach-rows { display: flex; flex-direction: column; gap: 4px; }
+.yach-row { display: flex; justify-content: space-between; gap: 8px; padding: 6px 10px; border-radius: 10px; font-size: 13px; background: color-mix(in srgb, var(--rc, #999) 18%, transparent); border-left: 4px solid var(--rc, #999); }
+.yach-row.common { background: linear-gradient(90deg, rgba(52,199,89,.25), rgba(255,204,0,.25), rgba(50,173,230,.25)); border-left-color: #af52de; }
+.yach-row.free { background: var(--yellow-bg); border-left-color: #f5b400; }
+.yach-row .yp { font-weight: 600; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) { .chip.zchip.common, .zone-cell.common .check:checked + .check-box { animation: none; } }
+
+/* ---------- Мастер делений ---------- */
+.wide-btn { width: 100%; margin: 6px 0; }
+.sw-wrap { display: flex; flex-direction: column; gap: 8px; }
+.sw-list, .sw-sugg { display: flex; flex-direction: column; gap: 4px; max-height: 52vh; overflow: auto; }
+.sw-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 0; border-radius: 12px; background: rgba(127,127,127,.08); text-align: left; color: var(--ink); font-size: 15px; }
+.sw-item small { display: block; color: var(--muted); font-size: 12px; }
+.sw-item.on { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.sw-check { width: 24px; height: 24px; flex: none; border-radius: 50%; display: grid; place-items: center; font-weight: 800; box-shadow: inset 0 0 0 1.8px rgba(120,125,140,.55); }
+.sw-item.on .sw-check { background: var(--accent); color: var(--accent-ink, #fff); box-shadow: none; }
+.sw-car-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.sw-car-head h3 { margin: 0; }
+.sw-car { display: flex; flex-direction: column; gap: 10px; }
+.sw-levels { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.sw-lv { display: grid; grid-template-columns: 110px 1fr; align-items: center; gap: 8px; font-size: 14px; }
+.zone-cell.common:has(.check:checked) small { color: rgba(0,0,0,.6); }
+.zone-cell.common:has(.check:checked) span { color: #1b1b1b; font-weight: 600; }

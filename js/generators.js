@@ -24,12 +24,13 @@ export function dative(fio) {
   const female = /[ая]$/i.test(name) || /(ова|ева|ина|ына|ская|цкая)$/i.test(sur);
   const fixSur = (w) => {
     if (female) {
-      if (/(ова|ева|ина|ына)$/i.test(w)) return w + 'й';
-      if (/(ская|цкая)$/i.test(w)) return w.slice(0, -2) + 'ой';
+      if (/(ова|ева|ёва|ина|ына)$/i.test(w)) return w.slice(0, -1) + 'ой';
+      if (/(ская|цкая|ая)$/i.test(w)) return w.slice(0, -2) + 'ой';
       return w;
     }
     if (/(ов|ев|ин|ын)$/i.test(w)) return w + 'у';
-    if (/(ский|цкий)$/i.test(w)) return w.slice(0, -2) + 'ому';
+    if (/(их|ых|ко)$/i.test(w)) return w;
+    if (/(ский|цкий|ий|ый|ой)$/i.test(w)) return w.slice(0, -2) + 'ому';
     if (/[бвгджзклмнпрстфхцчшщ]$/i.test(w)) return w + 'у';
     return w;
   };
@@ -46,9 +47,28 @@ export function dative(fio) {
   return [fixSur(sur), fixName(name), fixPat(pat)].filter(Boolean).join(' ');
 }
 
+// «От кого»: фамилия в родительном падеже + инициалы: «Чепкасова Анна Викторовна» → «Чепкасовой А.В.»
+export function genitive(fio) {
+  const parts = String(fio || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '';
+  const [sur, name = '', pat = ''] = parts;
+  const female = /вна$/i.test(pat) || (!pat && /[ая]$/i.test(name)) || (!name && /(ова|ева|ёва|ина|ына|ская|цкая|ая)$/i.test(sur));
+  let g = sur;
+  if (female) {
+    if (/(ова|ева|ёва|ина|ына)$/i.test(sur)) g = sur.slice(0, -1) + 'ой';
+    else if (/(ская|цкая|ая)$/i.test(sur)) g = sur.slice(0, -2) + 'ой';
+  } else if (!/(их|ых|ко|[еиоуэюы])$/i.test(sur)) {
+    if (/(ский|цкий|ий|ый|ой)$/i.test(sur)) g = sur.slice(0, -2) + 'ого';
+    else if (/[ьй]$/i.test(sur)) g = sur.slice(0, -1) + 'я';
+    else if (/[бвгджзклмнпрстфхцчшщ]$/i.test(sur)) g = sur + 'а';
+  }
+  const ini = [name, pat].filter(Boolean).map((w) => w[0].toUpperCase() + '.').join('');
+  return [g, ini].filter(Boolean).join(' ');
+}
+
 function sender(s) {
   const lines = [];
-  if (s.manager.fio) lines.push('ОТ ' + up(shortFio(s.manager.fio)));
+  if (s.manager.fio) lines.push('ОТ ' + up(genitive(s.manager.fio)));
   if (s.manager.phone) lines.push('ТЕЛ.:' + s.manager.phone);
   return lines;
 }
@@ -307,7 +327,7 @@ export function baseValues(s) {
     ОСП: s.osp || '', ГОРОД: s.city || '', АДРЕС: s.address || '',
     АДРЕС_ВЕРХ: up(cityLine(s)), АДРЕС_ПОЛН: cityLine(s),
     АДРЕС_КОМП: up(s.city ? `г.${s.city}, ${(s.address || '').trim()}`.replace(/,\s*$/, '') : (s.address || '')),
-    ОТ: up(shortFio(s.manager.fio)), ТЕЛ: s.manager.phone || '',
+    ОТ: up(genitive(s.manager.fio)), ТЕЛ: s.manager.phone || '',
     УПРАВЛЯЮЩИЙ: s.manager.fio || '', УПР_КРАТКО: shortFio(s.manager.fio), УПР_ОБЕД: s.lunchMgr || '15:00-16:00',
     ГОД: String(new Date().getFullYear()), ДАТА: fmtDate(new Date()),
     СКЛАД: s.warehouse || '', РЕГИОН: s.region || '',
@@ -333,7 +353,7 @@ export function envelopeValues(s, c) {
 
 // Сколько файлов даёт шаблон: конверт кадровику — по одному на каждого выбранного
 export function templateRuns(gen, s) {
-  if (gen === 'envHr') return (s.hr.length ? s.hr : ['']).map((n) => ({ suffix: n, values: envelopeValues(s, contact('hr', n) || (n ? { name: n } : null)) }));
+  if (gen === 'envHr') return (s.hr.length ? s.hr : ['']).map((n) => { const c = contact('hr', n) || (n ? { name: n } : null); return { suffix: c ? (c.dative || dative(c.name)).split(/\s+/)[0] : '', values: envelopeValues(s, c) }; });
   if (gen === 'envAcc' || gen === 'envGph') return [{ suffix: '', values: envelopeValues(s, (S.lists.accountants || [])[0]) }];
   if (gen === 'envLegal') return [{ suffix: '', values: envelopeValues(s, (S.lists.legal || [])[0]) }];
   return [{ suffix: '', values: baseValues(s) }];

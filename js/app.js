@@ -1,5 +1,5 @@
 // Точка входа: загрузка состояния, панель вкладок, переключение экранов.
-import { h, icon, fmtDate } from './util.js';
+import { h, icon, fmtDate, formatPhone } from './util.js';
 import { initTelegram, haptic } from './tg.js';
 import { loadState, S, update, onChange, sessionLabel } from './store.js';
 import { pushBack, popBack, toast } from './ui.js';
@@ -14,6 +14,7 @@ import { renderMaterials, checkDriveDocs } from './views/materials.js';
 import { renderSettings, createTab } from './views/settings.js';
 import { onboarding } from './views/session.js';
 import './drive.js';
+import { bootSync } from './sync.js';
 
 const VIEWS = { memos: renderMemos, docs: renderDocsTab, schedule: renderSchedule, plan: renderPlan, contracts: renderContracts, shelves: renderShelves, people: renderPeople, materials: renderMaterials };
 
@@ -124,6 +125,15 @@ function render() {
   window.scrollTo(0, keep);
 }
 
+// Любое поле телефона само приводится к виду 8-989-898-00-00 (срабатывает раньше обработчиков поля)
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (!(el instanceof HTMLInputElement) || !(el.type === 'tel' || el.inputMode === 'tel' || el.dataset.phone !== undefined)) return;
+  if (e.inputType && e.inputType.startsWith('delete')) return; // стирать можно свободно
+  const f = formatPhone(el.value);
+  if (f !== el.value) el.value = f;
+}, true);
+
 async function boot() {
   initTelegram();
   try {
@@ -144,6 +154,7 @@ async function boot() {
   onChange(render);
   render();
   document.body.classList.add('ready');
+  bootSync();
   if (!S.session.city && !S.session.osp && !S.sessions.length) setTimeout(onboarding, 400);
   // файлы «Памяток», которые живут на Google Диске (памятка сотрудникам) — проверяем обновления
   const last = Number(localStorage.getItem('driveDocsCheck') || 0);

@@ -8,6 +8,7 @@ import { storageInfo, requestPersist, fileKeys, fileGet, filePut } from '../db.j
 import { ping, pullState, pushState, driveOn, uploadFile, syncStatus } from '../drive.js';
 import { inTelegram, tgUser } from '../tg.js';
 import { bytesToBase64, base64ToBytes } from '../util.js';
+import { uploadMissing } from '../sync.js';
 
 const KIND_NAMES = { people: 'Контакты по регионам', memos: 'Памятки и вводные', docs: 'Список документов', schedule: 'Сервисный график', plan: 'Опорный план', contracts: 'Договора', shelves: 'Деления', materials: 'Материалы из Google Диска' };
 const isDocs = (t) => t.kind === 'docs' || t.kind === 'memos';
@@ -190,21 +191,7 @@ export function renderSettings(root, close) {
 async function uploadAll() {
   try {
     await withBusy('Сохраняю на Диск…', async (step) => {
-      const metas = [];
-      for (const d of Object.values(S.docs)) {
-        if (d.file) metas.push([d, d.file]);
-        for (const v of Object.values(d.variants || {})) if (v) metas.push([d, v]);
-      }
-      let i = 0;
-      for (const [doc, meta] of metas) {
-        i++;
-        if (meta.driveId) continue;
-        step(`Файл ${i} из ${metas.length}`);
-        const b = await fileGet(meta.key);
-        if (!b) continue;
-        const tab = tabById(doc.tabId);
-        meta.driveId = await uploadFile(b, meta.name || doc.title + '.pdf', tab ? tab.title : 'Файлы');
-      }
+      await uploadMissing(step);
       step('Сохраняю настройки…');
       await pushState();
     });

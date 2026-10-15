@@ -147,7 +147,7 @@ export function formDlg(title, fields, okLabel = 'Сохранить') {
     } else if (f.multiline) {
       input = h('textarea', { class: 'input', id, rows: 4, placeholder: f.placeholder || '' });
     } else {
-      input = h('input', { class: 'input', id, type: f.type || 'text', placeholder: f.placeholder || '', inputmode: f.inputmode });
+      input = h('input', { class: 'input', id, type: f.type || 'text', placeholder: f.placeholder || (f.type === 'tel' ? '8-900-000-00-00' : ''), inputmode: f.inputmode });
     }
     if (!f.options || f.value != null) input.value = f.value ?? '';
     inputs[f.key] = input;

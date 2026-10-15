@@ -4,6 +4,7 @@ import { S, update, newSession, sessionLabel, emit, autoWarehouse } from '../sto
 import { chipSelect, formDlg, confirmDlg, choiceDlg, openModal, toast } from '../ui.js';
 import { autoLunch, dative } from '../generators.js';
 import { contactsDlg } from './settings.js';
+import { sessionWizard, wizardSummary } from './wizard.js';
 
 let cardOpen = null;
 const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -210,7 +211,12 @@ export function renderSessionCard() {
       ),
       h('span', { class: 'chev', 'aria-hidden': 'true' }, icon('down')),
     ),
-    body,
+    h('div', { class: 'session-body' }, wizardSummary(),
+      h('div', { class: 'row-actions' },
+        h('button', { class: 'btn primary sm', onClick: () => sessionWizard() }, 'Заполнить по шагам'),
+        h('button', { class: 'btn ghost sm', onClick: lunchDlg }, 'Обеды…'),
+        h('button', { class: 'btn ghost sm', onClick: contactsDlg }, 'Справочник'),
+      )),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn ghost sm', onClick: startNewSession }, 'Новый сеанс'),
       S.sessions.length ? h('button', { class: 'btn ghost sm', onClick: pastSessions }, 'Прошлые сеансы') : null,
@@ -237,26 +243,22 @@ export async function startNewSession() {
     { label: 'С нуля', value: 'empty', kind: 'primary' },
   ]);
   if (!how) return;
-  const v = await formDlg('Где работаем', [
-    { key: 'city', label: 'Город' },
-    { key: 'osp', label: 'ОСП' },
-    { key: 'until', label: 'Работаем до', type: 'date' },
-  ], 'Начать');
-  if (!v) return;
+  const v = {};
   update((st) => {
     if (st.session.city || st.session.osp) st.sessions.unshift(st.session);
     const cur = st.session;
     const prefill = how === 'copy' ? {
       region: cur.region, warehouse: cur.warehouse, hr: clone(cur.hr), pbMain: cur.pbMain, pbRegional: cur.pbRegional, sbHead: cur.sbHead, sbRegional: cur.sbRegional,
     } : {};
-    st.session = newSession({ ...prefill, city: v.city, osp: v.osp, until: v.until });
+    st.session = newSession({ ...prefill });
     const dflt = (st.settings.sessionDefaults || {}).money || {};
     for (const [k, val] of Object.entries(dflt)) if (!st.session.money[k]) st.session.money[k] = val;
     autoWarehouse(st);
     st.selection.memos = undefined;
-    if (v.city && !st.lists.cities.includes(v.city)) st.lists.cities.push(v.city);
   });
   toast('Новый сеанс начат');
+  await sessionWizard('shop');
+  rememberCity();
 }
 
 async function pastSessions() {
@@ -275,15 +277,12 @@ async function pastSessions() {
   const m = openModal({ title: 'Прошлые сеансы', body: list });
 }
 
+function rememberCity() {
+  const c = (S.session.city || '').trim();
+  if (c && !S.lists.cities.includes(c)) update((st) => { st.lists.cities.push(c); });
+}
+
 export async function onboarding() {
-  const v = await formDlg('С чего начнём?', [
-    { key: 'city', label: 'В каком городе работаем?' },
-    { key: 'osp', label: 'Для какого ОСП?' },
-    { key: 'until', label: 'До какого числа командировка или работа?', type: 'date' },
-  ], 'Начать');
-  if (!v) return;
-  update((st) => {
-    Object.assign(st.session, v);
-    if (v.city && !st.lists.cities.includes(v.city)) st.lists.cities.push(v.city);
-  });
+  await sessionWizard('shop');
+  rememberCity();
 }

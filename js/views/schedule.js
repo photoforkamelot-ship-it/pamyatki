@@ -14,6 +14,24 @@ import { pickFiles } from '../ui.js';
 
 const BLOCK_SHORT = { morning: 'утро', day: 'день', evening: 'вечер' };
 
+// Цвет функционала: кассир — зелёный, пекарь — жёлтый, приёмщик — голубой (только в приложении, не в печати)
+const ROLE_COLORS = { 'кассир': '#34c759', 'пекарь': '#ffcc00', 'приёмщик': '#32ade6', 'приемщик': '#32ade6' };
+const EXTRA = ['#af52de', '#ff9500', '#ff2d55', '#5856d6'];
+export function roleColor(role) {
+  const k = String(role || '').toLowerCase();
+  if (ROLE_COLORS[k]) return ROLE_COLORS[k];
+  const i = S.lists.roles.indexOf(role);
+  return EXTRA[(i < 0 ? 0 : i) % EXTRA.length];
+}
+const rc = (role) => `--rc:${roleColor(role)}`;
+// зона нескольких функционалов — градиент из их цветов
+function zoneStyle(z) {
+  const o = ownersOf(z.id);
+  if (!o.length) return '';
+  if (o.length === 1) return rc(o[0]);
+  return `--rc:${roleColor(o[0])};--grad:linear-gradient(90deg,${o.map(roleColor).join(',')})`;
+}
+
 function sched() {
   const sid = S.session.id;
   if (!S.schedule.bySession[sid]) {
@@ -105,7 +123,7 @@ export function renderSchedule(tab, root) {
       h('p', { class: 'cap' }, 'Одно название зоны печатается в обоих документах. Нажмите на зону, чтобы переименовать её, указать время в ЯЧЧП или сделать общей.'),
       ...groups.map((g) => h('div', { class: 'zone-group' },
         h('p', { class: 'cap strong' }, g),
-        h('div', { class: 'chips' }, zs.filter((z) => (z.group || 'Без группы') === g).map((z) => h('button', { class: 'chip' + (z.task ? ' task' : '') + (z.control ? ' ctrl' : ''), onClick: () => editZone(z) },
+        h('div', { class: 'chips' }, zs.filter((z) => (z.group || 'Без группы') === g).map((z) => h('button', { class: 'chip zchip' + (z.task ? ' task' : '') + (z.control ? ' ctrl' : '') + (ownersOf(z.id).length > 1 ? ' common' : ''), style: zoneStyle(z), onClick: () => editZone(z) },
           z.name, z.common ? h('small', { class: 'tag' }, 'всем') : z.shared ? h('small', { class: 'tag' }, 'общая') : null))),
       )),
     ),
@@ -115,16 +133,16 @@ export function renderSchedule(tab, root) {
 function roleBlock(role) {
   const people = staffOf(role);
   const mine = (sched().assign[role] || []).map(zoneById).filter(Boolean);
-  return h('div', { class: 'role-block' },
+  return h('div', { class: 'role-block', style: rc(role) },
     h('div', { class: 'role-head' },
-      h('span', { class: 'role-pill' }, role.toUpperCase()),
+      h('span', { class: 'role-pill colored' }, role.toUpperCase()),
       h('div', { class: 'role-people' }, people.length
         ? people.map((p) => h('span', null, shortFio(p.fio), p.shift ? h('small', null, ' · смена ' + p.shift) : null))
         : h('span', { class: 'muted' }, 'нет сотрудников')),
       h('button', { class: 'btn ghost sm', disabled: !zones().length, onClick: () => assignDlg(role) }, mine.length ? `Зоны · ${mine.length}` : 'Назначить зоны'),
     ),
     people.length === 1 ? h('p', { class: 'cap' }, 'Второго сотрудника на этот функционал можно добавить во вводных.') : null,
-    mine.length ? h('div', { class: 'chips small' }, mine.map((z) => h('span', { class: 'chip static' + (z.control ? ' ctrl' : '') }, withDir(z)))) : null,
+    mine.length ? h('div', { class: 'chips small' }, mine.map((z) => h('span', { class: 'chip static zchip' + (ownersOf(z.id).length > 1 ? ' common' : ''), style: zoneStyle(z) }, withDir(z)))) : null,
   );
 }
 
@@ -140,17 +158,18 @@ function directorBlock() {
   );
 }
 
-function zoneGrid(list, selected) {
+function zoneGrid(list, selected, role) {
   const groups = [...new Set(list.map((z) => z.group || 'Без группы'))];
   return h('div', null, groups.map((g) => h('div', { class: 'zone-group' },
     h('p', { class: 'cap strong' }, g),
-    h('div', { class: 'zone-grid' }, list.filter((z) => (z.group || 'Без группы') === g).map((z) => {
+    h('div', { class: 'zone-grid', style: role ? rc(role) : '--rc:#ff9500' }, list.filter((z) => (z.group || 'Без группы') === g).map((z) => {
       const id = 'z' + z.id + Math.random().toString(36).slice(2, 5);
       const cb = h('input', { type: 'checkbox', id, class: 'check' });
       cb.checked = selected.has(z.id);
       cb.addEventListener('change', () => (cb.checked ? selected.add(z.id) : selected.delete(z.id)));
       const others = ownersOf(z.id);
-      return h('label', { class: 'zone-cell' + (z.control ? ' ctrl' : ''), for: id }, cb, h('span', { class: 'check-box', 'aria-hidden': 'true' }),
+      const common = isShared(z) && others.length > 1;
+      return h('label', { class: 'zone-cell' + (z.control ? ' ctrl' : '') + (isShared(z) ? ' common' : ''), for: id, style: common ? `--grad:linear-gradient(90deg,${others.map(roleColor).join(',')})` : null }, cb, h('span', { class: 'check-box', 'aria-hidden': 'true' }),
         h('span', null, z.name, others.length && isShared(z) ? h('small', null, ' · ' + others.join(', ')) : null));
     })),
   )));
@@ -167,7 +186,7 @@ function assignDlg(role) {
     title: `Зоны: ${role}`, wide: true,
     body: h('div', null,
       h('p', { class: 'muted-p' }, (people ? people + '. ' : '') + `Свободных зон: ${freeN}. Закреплённые за другими скрыты, общие (КМ, ФРОВ, вход…) видны всем.`),
-      avail.length ? zoneGrid(avail, mine) : h('p', { class: 'empty' }, 'Все зоны уже распределены.'),
+      avail.length ? zoneGrid(avail, mine, role) : h('p', { class: 'empty' }, 'Все зоны уже распределены.'),
     ),
     actions: [
       { label: 'Отмена', kind: 'ghost' },
@@ -281,10 +300,25 @@ function summaryCard() {
       h('div', { class: 'card-actions' }, h('button', { class: 'btn ghost sm', disabled: !yachRows().some((b) => b.rows.length), onClick: exportCsv }, 'ЯЧЧП в Excel'))),
     seg([['fio', 'ФИО'], ['position', 'Должности'], ['both', 'ФИО + должность']], view, (v) => update((s) => { s.schedule.view = v; })),
     h('div', { class: 'table-wrap' }, h('table', { class: 'tbl' },
-      h('thead', null, h('tr', null, d.head.map((c) => h('th', null, c)))),
-      h('tbody', null, d.rows.map((r) => h('tr', null, r.map((c, i) => (i === 0 ? h('th', { scope: 'row' }, c) : h('td', { style: { whiteSpace: 'pre-line' } }, c)))))),
+      h('thead', null, h('tr', null, d.head.map((c, i) => h('th', { class: i ? 'rc-head' : null, style: i ? rc(c) : null }, c)))),
+      h('tbody', null, d.rows.map((r) => h('tr', null, r.map((c, i) => (i === 0 ? h('th', { scope: 'row' }, c) : h('td', { class: 'rc-cell', style: rc(S.lists.roles[i - 1]) + ';white-space:pre-line' }, c)))))),
     )),
+    yachPreview(),
   );
+}
+
+// ЯЧЧП в приложении: фамилии и зоны в цвете функционала, общие — градиентом
+function yachPreview() {
+  const blocks = yachRows().filter((b) => b.rows.length);
+  if (!blocks.length) return null;
+  const roles = S.lists.roles;
+  return h('details', { class: 'opt yach-prev' }, h('summary', null, 'ЯЧЧП — как распределено'),
+    blocks.map((b) => h('div', { class: 'yach-block' }, h('p', { class: 'cap strong' }, b.label),
+      h('div', { class: 'yach-rows' }, b.rows.map((r) => {
+        const style = r.role >= 0 ? rc(roles[r.role]) : '';
+        return h('div', { class: 'yach-row' + (r.role < 0 && !r.free ? ' common' : '') + (r.free ? ' free' : ''), style },
+          h('span', { class: 'yz' }, r.zone), h('span', { class: 'yp' }, [...new Set([r.s1, r.s2].filter(Boolean))].join(' / ') || '—'));
+      })))));
 }
 
 // ---------- печатные формы ----------

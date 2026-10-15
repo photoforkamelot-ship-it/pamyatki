@@ -113,10 +113,17 @@ var ACTIONS = {
     if (!chatId) throw new Error('Не известен чат: откройте приложение из Telegram или укажите ID чата в настройках');
     var name = req.name || 'file.pdf';
     var mime = /\.csv$/i.test(name) ? 'text/csv' : /\.docx$/i.test(name) ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : /\.xlsx$/i.test(name) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : /\.zip$/i.test(name) ? 'application/zip' : 'application/pdf';
-    var blob = Utilities.newBlob(Utilities.base64Decode(req.base64), mime, name);
+    // Собираем multipart сами: так русское имя файла доходит до Telegram целиком
+    var boundary = 'osp' + Utilities.getUuid().replace(/-/g, '');
+    var head = '--' + boundary + '\r\nContent-Disposition: form-data; name="chat_id"\r\n\r\n' + String(chatId) + '\r\n'
+      + '--' + boundary + '\r\nContent-Disposition: form-data; name="caption"\r\n\r\n' + (req.caption || '').slice(0, 1000) + '\r\n'
+      + '--' + boundary + '\r\nContent-Disposition: form-data; name="document"; filename="' + name.replace(/"/g, "'") + '"\r\nContent-Type: ' + mime + '\r\n\r\n';
+    var tail = '\r\n--' + boundary + '--\r\n';
+    var bytes = [].concat(Utilities.newBlob(head).getBytes(), Utilities.base64Decode(req.base64), Utilities.newBlob(tail).getBytes());
     var resp = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendDocument', {
       method: 'post',
-      payload: { chat_id: String(chatId), caption: (req.caption || '').slice(0, 1000), document: blob },
+      contentType: 'multipart/form-data; boundary=' + boundary,
+      payload: bytes,
       muteHttpExceptions: true,
     });
     var out = JSON.parse(resp.getContentText());

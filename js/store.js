@@ -17,6 +17,7 @@ const persist = debounce(async () => {
 
 export function update(fn, { silent = false } = {}) {
   fn(S);
+  S.savedAt = Date.now();
   persist();
   if (!silent) for (const l of listeners) l();
 }
@@ -51,12 +52,15 @@ function migrate(s) {
     if ('skippedRun' in doc) { if (doc.skippedRun) doc.skippedSession = s.session.id; delete doc.skippedRun; }
   }
   if (s.shelves.catalog.some((c) => !c.variants)) s.shelves.catalog = s.shelves.catalog.map(upgradeShelf);
+  if (!s.shelves.regional) s.shelves.regional = {};
   if (!s.contracts.version) s.contracts = { version: 2, cities: {} };
   if (!s.tabs.some((t) => t.kind === 'people')) s.tabs.push(d.tabs.find((t) => t.kind === 'people'));
   if (!s.tabs.some((t) => t.kind === 'materials')) s.tabs.push(d.tabs.find((t) => t.kind === 'materials'));
   if (!s.lists.warehouses.some((w) => /омск/i.test(w.name))) s.lists.warehouses.push({ name: 'РЦ Омск', region: 'СФО' });
   if (!s.session.kic) s.session.kic = { name: '', email: '' };
   for (const k of Object.keys(d.materials)) if (s.materials[k] === undefined) s.materials[k] = d.materials[k];
+  // дательный падеж, сохранённый с ошибкой («Лысовай»), пересчитываем
+  for (const k of ['hr', 'accountants', 'legal']) for (const c of s.lists[k] || []) if (/(ов|ев|ин|ын)ай(\s|$)/i.test(c.dative || '')) c.dative = '';
   s.version = d.version;
   return s;
 }
@@ -279,6 +283,7 @@ function defaultState() {
       catalog: seedShelves().map(upgradeShelf),
       groupsOrder: SHELF_GROUPS.slice(),
       current: { items: {}, perPage: 2 },
+      regional: {},
       archive: [],
     },
     settings: {

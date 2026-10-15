@@ -8,6 +8,7 @@ import { tabSettingsDlg } from './settings.js';
 import { setSheetsCells } from '../xlsx.js';
 import { getBytes } from '../files.js';
 import { choiceDlg } from '../ui.js';
+import { shelvesWizard, editOneShelf } from './shelfwizard.js';
 
 const DRAFT = 'ДЕЛЕНИЯ ЧЕРНОВИК для РЕДАКТИРОВ';
 const PRINT = 'ПЕЧАТЬ';
@@ -23,7 +24,7 @@ export async function shelvesXlsx(items) {
     const [, c, r] = it.src.match(/^([A-Z]+)(\d+)$/);
     const col = colN(c), row = Number(r);
     const p = pick(it.id);
-    it.variants.slice(0, 2).forEach((v, vi) => {
+    effVariants(it).slice(0, 2).forEach((v, vi) => {
       const sel = p && p.on && (p.v || 0) === vi ? { reinforced: p.reinforced, variant: v } : null;
       for (let lvl = 10; lvl >= 1; lvl--) {
         const raw = (v.levels || {})[String(lvl)];
@@ -50,10 +51,20 @@ const cur = () => S.shelves.current;
 const pick = (id) => cur().items[id];
 const kindLabel = (k) => (SHELF_KINDS.find((x) => x.value === k) || {}).label || '';
 
+// Деления с учётом версии региона: правки под УФО/ЦФО/СФО хранятся отдельно, общий шаблон не меняется
+export function effVariants(it, region = S.session.region) {
+  const o = region && S.shelves.regional && S.shelves.regional[region] && S.shelves.regional[region][it.id];
+  return o || it.variants;
+}
+export function regionEdits(region = S.session.region) {
+  return Object.keys((S.shelves.regional || {})[region] || {}).length;
+}
+
 function selOf(it) {
   const p = pick(it.id);
   if (!p) return null;
-  const v = it.variants[p.v || 0] || it.variants[0];
+  const vs = effVariants(it);
+  const v = vs[p.v || 0] || vs[0];
   return { ...p, variant: v };
 }
 
@@ -66,7 +77,7 @@ export function gapValue(raw, base, want) {
 }
 
 export function cardRows(it, sel) {
-  const v = sel ? sel.variant : it.variants[0];
+  const v = sel ? sel.variant : effVariants(it)[0];
   if (!v) return [];
   const keys = Object.keys(v.levels).map(Number).sort((a, b) => b - a);
   if (!keys.length) return [];
@@ -121,6 +132,8 @@ export function renderShelves(tab, root) {
         h('label', null, 'Карточек на листе',
           h('div', { class: 'seg' }, [1, 2, 4].map((n) => h('button', { class: 'seg-btn' + (cur().perPage === n ? ' on' : ''), 'aria-pressed': cur().perPage === n ? 'true' : 'false', onClick: () => update(() => { cur().perPage = n; }) }, String(n))))),
       ),
+      h('button', { class: 'btn primary wide-btn', onClick: () => shelvesWizard() }, 'Мастер: высоты → усиление → правки → печать'),
+      h('p', { class: 'cap' }, S.session.region ? (regionEdits() ? `Деления: версия ${S.session.region} (своих правок: ${regionEdits()})` : `Деления: общий шаблон (правок для ${S.session.region} пока нет)`) : 'Деления: общий шаблон. Выберите регион во вводных, чтобы правки сохранялись под регион.'),
       h('div', { class: 'toolbar' },
         h('button', { class: 'btn ghost sm', onClick: openArchive }, icon('archive'), 'Архив'),
         h('button', { class: 'btn ghost sm', disabled: !selectedCount, onClick: saveToArchive }, 'В архив'),
@@ -167,7 +180,7 @@ function itemRow(it) {
   return h('div', { class: 'shelf-row' + (on ? ' on' : '') },
     h('div', { class: 'shelf-top' },
       h('label', { class: 'check-wrap', for: id }, cb, h('span', { class: 'check-box', 'aria-hidden': 'true' })),
-      h('label', { for: id, class: 'shelf-name' }, it.name, it.sub ? h('small', { class: 'sub' }, it.sub) : null, h('small', null, info), it.note ? h('small', null, it.note) : null),
+      h('label', { for: id, class: 'shelf-name', ondblclick: (e) => { e.preventDefault(); editOneShelf(it); } }, it.name, it.sub ? h('small', { class: 'sub' }, it.sub) : null, h('small', null, info), it.note ? h('small', null, it.note) : null),
       S.settings.showPencil ? h('button', { class: 'pencil', 'aria-label': 'Изменить категорию', onClick: () => menu(it.name, [{ label: 'Изменить', onClick: () => editItem(it) }, { label: 'Копия', onClick: () => copyItem(it) }, { label: 'Удалить', danger: true, onClick: () => deleteShelfItem(it) }]) }, icon('pencil')) : null,
     ),
     opts.length ? h('div', { class: 'shelf-opts' }, opts) : null,
@@ -177,7 +190,7 @@ function itemRow(it) {
 function cardBlock(it, perPage) {
   const sel = selOf(it);
   const rows = it.kind === 'showcase' ? [] : cardRows(it, sel);
-  const v = sel ? sel.variant : it.variants[0];
+  const v = sel ? sel.variant : effVariants(it)[0];
   const tags = [it.sub, sel && sel.reinforced ? 'усиленный (+1 деление)' : ''].filter(Boolean);
   return { t: 'shelfcard', perPage, top: v ? v.label : '', ...cardTitle(it, sel), tags, rows, blankRows: it.kind === 'showcase' || rows.length ? 0 : 8, note: it.note };
 }
@@ -245,7 +258,7 @@ export async function deleteShelfItem(it) {
   if (await confirmDlg('Удалить категорию?', it.name, 'Удалить', 'Отмена', true)) update((s) => { s.shelves.catalog = s.shelves.catalog.filter((x) => x.id !== it.id); delete s.shelves.current.items[it.id]; });
 }
 
-async function printShelves() {
+export async function printShelves() {
   const perPage = cur().perPage || 2;
   const items = S.shelves.groupsOrder.flatMap((g) => S.shelves.catalog.filter((it) => it.group === g && pick(it.id) && pick(it.id).on));
   if (S.shelves.xlsxTpl) {

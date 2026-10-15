@@ -4,7 +4,7 @@ import { S, update, activeFile, setActiveFile, makeDoc, dependValue, DEPENDS, se
 import { openModal, confirmDlg, choiceDlg, promptDlg, pickFiles, toast, withBusy, menu, toggle } from '../ui.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
 import { buildPrint, renderThumbs, diffText, blocksToPdf } from '../pdf.js';
-import { deliver } from '../output.js';
+import { deliver, docName } from '../output.js';
 import { GENERATORS, baseValues, templateRuns } from '../generators.js';
 import { fillDocx, isDocx } from '../docx.js';
 import { renderBlocks } from '../pages.js';
@@ -381,7 +381,7 @@ async function wordOutputs(doc) {
   const out = [];
   for (const r of runs) {
     const f = await fillDocx(bytes, r.values);
-    out.push({ name: [doc.title, r.suffix].filter(Boolean).join(' — '), bytes: f.bytes, missing: f.missing });
+    out.push({ name: [doc.title, r.suffix].filter(Boolean).join(' '), bytes: f.bytes, missing: f.missing });
   }
   return out;
 }
@@ -397,7 +397,7 @@ async function deliverFiles(files, archiveName) {
   const zip = new JSZip();
   const used = new Set();
   for (const f of files) {
-    let n = f.name.replace(/[\\/:*?"<>|]+/g, ' ').trim();
+    let n = docName(f.name).replace(/[\\/:*?"<>|]+/g, ' ').trim();
     while (used.has(n)) n += ' (2)';
     used.add(n);
     zip.file(n + '.docx', f.bytes);
@@ -471,7 +471,7 @@ async function excelOutputs(doc) {
   update((st) => { st.session.tabelUnit = unitText; }, { silent: true });
   const v = { A3: unitText };
   if (mode === 'full') {
-    staff.slice(0, nRows).forEach((p, i) => { v['C' + (16 + 2 * i)] = p.fio + (p.position ? ` (${p.position})` : ''); });
+    staff.slice(0, nRows).forEach((p, i) => { v['C' + (16 + 2 * i)] = `${p.fio} (${p.position || 'продавец-кассир'})`; });
     const mgr = S.session.manager.fio;
     if (mgr) { v['D' + foot] = 'Управляющий магазином'; v['J' + foot] = shortFio(mgr); v['P' + foot] = shortFio(mgr); }
   }
