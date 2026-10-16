@@ -141,7 +141,11 @@ export async function fillYach(bytes, data) {
       if (bi === 0) cells += str(`E${r}`, first ? '34' : last ? '36' : '29', '');
       if (bi === 1) cells += str(`I${r}`, last ? '43' : '41', '');
     });
-    out.push(`<row r="${r}" ${rowAttrs(rowTpl)}>${cells}</row>`);
+    // длинные названия переносятся: высота строки растёт под число строк текста
+    const lines = Math.max(1, ...data.blocks.map((b) => { const z = b.rows[i]; if (!z) return 1; return Math.max(Math.ceil(String(z.zone || '').length / 30), Math.ceil(String(z.s1 || '').length / 20), Math.ceil(String(z.s2 || '').length / 20)); }));
+    let attrs = rowAttrs(rowTpl);
+    if (lines > 1) attrs = attrs.replace(/ht="([\d.]+)"/, (m0, v) => `ht="${(Number(v) * lines).toFixed(1)}"`);
+    out.push(`<row r="${r}" ${attrs}>${cells}</row>`);
   }
   const last = 3 + n;
   const xml = replaceSheetData(sheet, out.join(''), ['A1:L1', `A3:A${last}`, 'B3:D3', `E3:E${last}`, 'F3:H3', `I3:I${last}`, 'J3:L3'], `A1:L${last}`);

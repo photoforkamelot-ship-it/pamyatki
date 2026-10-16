@@ -1,8 +1,8 @@
 // Контакты по регионам — как ваша таблица: ФИО | Направление | Телефон | Почта / примечание, с разделами.
 // Каждую строку в каждом регионе можно изменить, удалить, добавить; общие строки — скопировать в другие регионы.
-import { h, icon, fmtDate, uid } from '../util.js';
+import { h, icon, fmtDate, uid, formatPhone } from '../util.js';
 import { S, update, sessionLabel } from '../store.js';
-import { openModal, confirmDlg, toast, withBusy, chipSelect, formDlg, choiceDlg, menu, promptDlg } from '../ui.js';
+import { openModal, confirmDlg, toast, withBusy, chipSelect, formDlg, choiceDlg, menu, promptDlg, pickFiles } from '../ui.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
 import { deliver } from '../output.js';
 import { tabSettingsDlg, contactsDlg } from './settings.js';
@@ -94,6 +94,10 @@ export function renderPeople(tab, root) {
         h('button', { class: 'btn ghost sm', onClick: () => addSection(region) }, icon('plus'), 'Раздел'),
         h('button', { class: 'btn primary sm', disabled: !rows.length, onClick: () => printRegion(region) }, icon('print'), 'PDF'),
       ),
+      h('div', { class: 'row-actions' },
+        h('button', { class: 'btn ghost sm', onClick: () => importFromPhone(region) }, icon('plus'), 'Из контактов телефона'),
+        h('button', { class: 'btn ghost sm', onClick: () => importFromText(region) }, 'Вставить текстом'),
+      ),
       h('div', { class: 'row-actions' }, h('button', { class: 'btn ghost sm', onClick: contactsDlg }, 'Кадровики, бухгалтер, юрист для конвертов')),
     ),
     listBox,
@@ -101,21 +105,22 @@ export function renderPeople(tab, root) {
 }
 
 // ---------- правка ----------
-function editRow(reg, row, afterIndex) {
+function editRow(reg, row, afterIndex, prefill = {}) {
   const isNew = !row;
+  if (isNew && Object.keys(prefill).length) row = null;
   const sections = rowsOf(reg).filter((r) => r.section).map((r) => r.section);
   const curSection = isNew ? (afterIndex != null ? rowsOf(reg)[afterIndex].section : sections[0]) : sectionOf(reg, row);
   const others = regions().filter((r) => r !== reg);
   formDlg(isNew ? 'Новая строка · ' + reg : 'Строка · ' + reg, [
-    { key: 'name', label: 'ФИО', value: row ? row.name : '' },
-    { key: 'dept', label: 'Направление', value: row ? row.dept : '' },
-    { key: 'phone', label: 'Телефон (несколько — через запятую)', value: row ? row.phone : '' },
-    { key: 'email', label: 'Почта / примечание', value: row ? row.email : '' },
+    { key: 'name', label: 'ФИО', value: row ? row.name : prefill.name || '', placeholder: 'Иванова Анна' },
+    { key: 'dept', label: 'Направление', value: row ? row.dept : prefill.dept || '', placeholder: 'Например: специалист по кадрам' },
+    { key: 'phone', label: 'Телефон (несколько — через запятую)', value: row ? row.phone : prefill.phone || '', placeholder: '8-923-900-90-90 (+7 заменится на 8 сам)' },
+    { key: 'email', label: 'Почта / примечание', value: row ? row.email : prefill.email || '', placeholder: 'name@ya-retail.ru' },
     { key: 'section', label: 'Раздел', options: sections.map((s) => ({ value: s, label: s })), value: curSection },
     ...(isNew && others.length ? [{ key: 'also', label: 'Добавить и в другие регионы', options: [{ value: '', label: 'Только ' + reg }, { value: '*', label: 'Во все регионы (общий контакт)' }, ...others.map((r) => ({ value: r, label: 'Ещё в ' + r }))] }] : []),
   ]).then((v) => {
     if (!v) return;
-    const data = { name: v.name.trim(), dept: v.dept.trim(), phone: v.phone.trim(), email: v.email.trim() };
+    const data = { name: v.name.trim(), dept: v.dept.trim(), phone: normPhones(v.phone), email: v.email.trim() };
     update(() => {
       const put = (r) => {
         const list = directory()[r] = directory()[r] || [];
@@ -178,6 +183,67 @@ async function addSection(reg) {
 async function copyRegion(from, to) {
   if (!(await confirmDlg('Скопировать?', `Все строки ${from} попадут в ${to}. Потом замените региональных: тренеров, кадровиков, АХЧ, инженеров.`, 'Скопировать'))) return;
   update(() => { directory()[to] = rowsOf(from).map((r) => ({ ...r, id: uid() })); });
+}
+
+// ---------- импорт: контакты телефона, файл .vcf, вставка текста ----------
+// Каждый номер — в вид 8-923-900-90-90, «+7» меняется на 8; добавочные и городские оставляем как есть
+export function normPhones(str) {
+  return String(str || '').split(/\s*[,;]\s*/).map((p) => {
+    const d = p.replace(/\D/g, '');
+    if (/доп/i.test(p) || d.length < 10 || d.length > 11) return p.trim();
+    if (d.length === 10 && d[0] !== '9') return p.trim();
+    return formatPhone(d);
+  }).filter(Boolean).join(', ');
+}
+
+function parseVcf(text) {
+  const out = [];
+  for (const card of String(text).split(/BEGIN:VCARD/i).slice(1)) {
+    const lines = card.replace(/\r?\n[ \t]/g, '').split(/\r?\n/);
+    const get = (re) => lines.filter((l) => re.test(l)).map((l) => l.slice(l.indexOf(':') + 1).trim());
+    const fn = get(/^FN[;:]/i)[0] || (get(/^N[;:]/i)[0] || '').split(';').filter(Boolean).reverse().join(' ');
+    out.push({ name: fn, phone: normPhones(get(/^(item\d+\.)?TEL[;:]/i).join(', ')), email: get(/^(item\d+\.)?EMAIL[;:]/i)[0] || '', dept: [get(/^TITLE[;:]/i)[0], get(/^ORG[;:]/i)[0]].filter(Boolean).join(', ').replace(/;+/g, ' ').trim() });
+  }
+  return out.filter((c) => c.name || c.phone);
+}
+
+function parseText(text) {
+  const t = String(text || '');
+  const phones = t.match(/(\+7|8)[\s(-]*\d{3}[\s)-]*\d{3}[\s-]*\d{2}[\s-]*\d{2}/g) || [];
+  const email = (t.match(/[\w.+-]+@[\w-]+\.[\w.]+/) || [''])[0];
+  let rest = t; phones.forEach((p) => { rest = rest.replace(p, ' '); }); rest = rest.replace(email, ' ');
+  const words = rest.split(/\n|,|;|\t/).map((x) => x.trim()).filter((x) => x.length > 1);
+  return { name: words[0] || '', dept: words.slice(1).join(', '), phone: normPhones(phones.join(', ')), email };
+}
+
+async function importFromPhone(reg) {
+  // Android Chrome умеет выбирать из адресной книги; на iPhone — через файл контакта (.vcf)
+  if (navigator.contacts && navigator.contacts.select) {
+    try {
+      const picked = await navigator.contacts.select(['name', 'tel', 'email'], { multiple: false });
+      const c = picked && picked[0];
+      if (c) return editRow(reg, null, undefined, { name: (c.name || [])[0] || '', phone: normPhones((c.tel || []).join(', ')), email: (c.email || [])[0] || '' });
+      return;
+    } catch (e) { /* не дали доступ — пробуем файлом */ }
+  }
+  const ok = await choiceDlg('Контакт из телефона', 'В «Контактах» откройте человека → «Поделиться контактом» → «Сохранить в Файлы». Затем выберите этот файл здесь. Можно сразу несколько.', [
+    { label: 'Отмена', value: '' }, { label: 'Выбрать файл .vcf', value: 'f', kind: 'primary' },
+  ]);
+  if (!ok) return;
+  const files = await pickFiles({ accept: '.vcf,text/vcard,text/x-vcard', multiple: true });
+  const all = [];
+  for (const f of files) all.push(...parseVcf(await f.text()));
+  if (!all.length) { toast('В файле не нашлось контактов', 'warn'); return; }
+  editRow(reg, null, undefined, all[0]);
+  if (all.length > 1) toast(`Открыт первый из ${all.length}. Остальные добавьте тем же способом.`);
+}
+
+async function importFromText(reg) {
+  let initial = '';
+  try { if (navigator.clipboard && navigator.clipboard.readText) initial = await navigator.clipboard.readText(); } catch (e) { /* буфер недоступен — вставят вручную */ }
+  const text = await promptDlg('Вставить контакт', { label: 'Вставьте сюда текст: имя, должность, телефон, почту — в любом порядке. Если буфер не вставился сам, нажмите в поле и удерживайте → «Вставить».', value: initial, multiline: true, okLabel: 'Разобрать' });
+  if (!text) return;
+  editRow(reg, null, undefined, parseText(text));
 }
 
 // ---------- печать — в виде вашей таблицы ----------

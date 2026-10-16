@@ -61,6 +61,12 @@ function migrate(s) {
   for (const k of Object.keys(d.materials)) if (s.materials[k] === undefined) s.materials[k] = d.materials[k];
   // дательный падеж, сохранённый с ошибкой («Лысовай»), пересчитываем
   for (const k of ['hr', 'accountants', 'legal']) for (const c of s.lists[k] || []) if (/(ов|ев|ин|ын)ай(\s|$)/i.test(c.dative || '')) c.dative = '';
+  const envSec = (s.tabs.find((t) => t.id === 'memos') || { sections: [] }).sections.find((x) => x.key === 'gen-env');
+  if (envSec && !envSec.items.some((id) => s.docs[id] && s.docs[id].generator === 'ospLabels')) {
+    const nd = makeDoc('memos', 'Таблички «ОСП + адрес» для маркировки отправок', { generator: 'ospLabels' });
+    s.docs[nd.id] = nd; envSec.items.push(nd.id);
+    if (envSec.title === 'Конверты и таблички') envSec.title = 'Конверты и таблички на склад';
+  }
   s.version = d.version;
   return s;
 }
@@ -200,12 +206,13 @@ function defaultState() {
     id: 'memos', kind: 'memos', title: 'Памятки / Бланки', builtin: true, hidden: false,
     settings: { printMode: 'duplex', perItemPrint: true, cover: false, staleMode: 'badge' },
     sections: [
-      sec('memos', 'Конверты и таблички', [
+      sec('memos', 'Конверты и таблички на склад', [
         ['Конверт кадровику', '', 'envHr'],
         ['Конверт бухгалтеру — документы (справки)', '', 'envAcc'],
         ['Конверт бухгалтеру — ГПХ документы (дворник)', '', 'envGph'],
         ['Конверт юристу', '', 'envLegal'],
         ['Таблички возврата: МОПы, ковёр, ящик и подконтрольная продукция', '', 'returnLabels'],
+        ['Таблички «ОСП + адрес» для маркировки отправок', '', 'ospLabels'],
       ], { printMode: 'simplex', key: 'gen-env' }),
       sec('memos', 'Из вводных', [
         ['Расписка о размене', '', 'receipt'],

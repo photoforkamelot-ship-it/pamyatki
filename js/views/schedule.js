@@ -316,7 +316,7 @@ function yachPreview() {
     blocks.map((b) => h('div', { class: 'yach-block' }, h('p', { class: 'cap strong' }, b.label),
       h('div', { class: 'yach-rows' }, b.rows.map((r) => {
         const style = r.role >= 0 ? rc(roles[r.role]) : '';
-        return h('div', { class: 'yach-row' + (r.role < 0 && !r.free ? ' common' : '') + (r.free ? ' free' : ''), style },
+        return h('div', { class: 'yach-row' + (r.common ? ' common-tag' : '') + (r.free ? ' free' : ''), style },
           h('span', { class: 'yz' }, r.zone), h('span', { class: 'yp' }, [...new Set([r.s1, r.s2].filter(Boolean))].join(' / ') || '—'));
       })))));
 }
@@ -357,10 +357,13 @@ function yachRows() {
       let owners = roles.filter((r) => (sched().assign[r] || []).includes(z.id));
       const pick = (sched().yachOwner[z.id] || {})[b.id];
       if (pick && owners.includes(pick)) owners = [pick];
-      const many = owners.length > 1 && owners.length === roles.length;
-      const s1 = many ? 'все' : owners.map((r) => shiftPerson(r, 1)).filter(Boolean).map((p) => surname(p.fio)).join(' / ');
-      const s2 = many ? 'все' : owners.map((r) => shiftPerson(r, 2)).filter(Boolean).map((p) => surname(p.fio)).join(' / ');
-      rows.push({ s1, s2, zone: withDir(z), control: z.control, free: !owners.length, role: owners.length === 1 ? roles.indexOf(owners[0]) : -1 });
+      const nm = (r, sh) => { const p = shiftPerson(r, sh); return p ? surname(p.fio) : ''; };
+      if (owners.length > 1) {
+        // общая зона — отдельной строкой у каждого функционала, с пометкой
+        for (const r of owners) rows.push({ s1: nm(r, 1), s2: nm(r, 2), zone: withDir(z) + ' (общая зона)', control: z.control, free: false, role: roles.indexOf(r), common: true });
+        continue;
+      }
+      rows.push({ s1: owners.length ? nm(owners[0], 1) : '', s2: owners.length ? nm(owners[0], 2) : '', zone: withDir(z), control: z.control, free: !owners.length, role: owners.length === 1 ? roles.indexOf(owners[0]) : -1 });
     }
     return { label: b.label, rows };
   });

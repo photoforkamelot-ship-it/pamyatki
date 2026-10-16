@@ -70,19 +70,20 @@ function carousel(box, items, done) {
       const top = Math.max(7, ...Object.keys(lv).map(Number));
       const inputs = {};
       const grid = h('div', { class: 'sw-levels' });
-      for (let n = top; n >= 1; n--) {
-        const inp = h('input', { class: 'input', value: lv[String(n)] || '', placeholder: '—', enterkeyhint: 'next' });
+      // снизу вверх: «Делений между 1 и 2 полкой», «между 2 и 3»…
+      for (let n = 1; n <= top; n++) {
+        const inp = h('input', { class: 'input', placeholder: '—', enterkeyhint: 'next', autocomplete: 'off' });
         inp.value = lv[String(n)] || '';
         inputs[n] = inp;
-        grid.append(h('label', { class: 'sw-lv' }, h('span', null, n === 1 ? '1 нижняя' : `${n} полка`), inp));
+        grid.append(h('label', { class: 'sw-lv' }, h('span', null, `Делений между ${n} и ${n + 1} полкой`), inp));
       }
-      const ins = Object.values(inputs).reverse();
-      ins.forEach((el, i) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); (ins[i - 1] || ins[i]).focus(); } }));
+      const ins = Object.values(inputs);
+      ins.forEach((el, i) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); (ins[i + 1] || ins[i]).focus(); } }));
       body.append(
         vs.length > 1 ? h('div', { class: 'seg' }, vs.map((v, i) => h('button', { class: 'seg-btn' + (i === vi ? ' on' : ''), onClick: () => { vi = i; fill(); } }, v.label))) : null,
-        h('p', { class: 'cap' }, 'Свободных делений между полками, сверху вниз. Можно писать текст: «подтоварка», «2(ср.угол)».'),
+        h('p', { class: 'cap' }, 'Заполняйте снизу вверх, Enter — к следующей. Можно писать текст: «подтоварка», «2(ср.угол)».'),
         grid,
-        h('button', { class: 'btn ghost sm', onClick: () => { lv[String(top + 1)] = ''; vs[vi] = { ...vs[vi], levels: { ...collect(), [String(top + 1)]: '' } }; fill(); } }, icon('plus'), 'Ещё полка сверху'),
+        h('button', { class: 'btn ghost sm', onClick: () => { lv[String(top + 1)] = ''; vs[vi] = { ...vs[vi], levels: { ...collect(), [String(top + 1)]: '' } }; fill(); } }, icon('plus'), 'Ещё ряд сверху'),
       );
       body._collect = collect;
       function collect() { const o = {}; for (const [n, el] of Object.entries(inputs)) if (el.value.trim()) o[n] = el.value.trim(); return o; }

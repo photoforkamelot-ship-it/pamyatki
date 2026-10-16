@@ -141,6 +141,16 @@ export const GENERATORS = {
     build(s) { return envelope(s, ['ДОКУМЕНТЫ'], (S.lists.legal || [])[0] || null); },
   },
 
+  ospLabels: {
+    tpl: true,
+    label: 'Табличка ОСП и адрес',
+    build(s) {
+      const pages = [];
+      for (let i = 0; i < 4; i++) pages.push([{ t: 'gap', h: 60 }, { t: 'center', text: up(s.osp || '____'), size: 96, bold: true, gap: 6, lh: 1.1 }, { t: 'center', text: up(cityLine(s)), size: 17, bold: true, color: '#777', gap: 0 }]);
+      return withPageBreaks(pages);
+    },
+  },
+
   returnLabels: {
     tpl: true,
     label: 'Таблички возврата',
