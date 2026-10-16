@@ -78,3 +78,48 @@ export async function buildStickers4(base, values, { hairline = 0.25 } = {}) {
   }
   return doc.save({ useObjectStreams: true });
 }
+
+// ---------- таблички склада «4 на листе» (возврат, ОСП + адрес) ----------
+// layout: { tiles: [[x, y, w, h]…], fields: [{ key, tile, cx, y0, h, size, color }], copies, addressKey }
+async function centeredPng(text, { width, height, size, cx, color }) {
+  const K = 5;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(width * K); c.height = Math.ceil(height * K);
+  const ctx = c.getContext('2d');
+  ctx.scale(K, K);
+  let fs = size;
+  const font = () => `700 ${fs}px StickerSans, Calibri, Carlito, Arial, sans-serif`;
+  ctx.font = font();
+  const room = width - 8;
+  while (ctx.measureText(text).width > room && fs > 6) { fs -= 0.5; ctx.font = font(); }
+  ctx.fillStyle = color || '#000';
+  ctx.textAlign = 'center';
+  // если текст шире исходного места — держим его внутри клетки
+  const w = ctx.measureText(text).width;
+  const x = Math.min(Math.max(cx, 4 + w / 2), width - 4 - w / 2);
+  const base = fs === size ? size * 0.952 : (height + fs * 0.65) / 2;
+  ctx.fillText(text, x, base);
+  const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+export async function buildSheet4(base, layout, values) {
+  await loadFont();
+  const src = await PDFDocument.load(base, { ignoreEncryption: true, updateMetadata: false });
+  const page = src.getPage(0);
+  const val = (k) => String((k === 'АДРЕС' ? values[layout.addressKey || 'АДРЕС_ВЕРХ'] : values[k]) || '').trim().toUpperCase();
+  for (const f of layout.fields) {
+    const text = val(f.key);
+    if (!text) continue;
+    const [tx, , tw] = layout.tiles[f.tile];
+    const png = await src.embedPng(await centeredPng(text, { width: tw, height: f.h, size: f.size, cx: f.cx - tx, color: f.color }));
+    page.drawImage(png, { x: tx, y: f.y0, width: tw, height: f.h });
+  }
+  // двусторонняя печать: оборот такой же, как лицо
+  const out = await PDFDocument.create();
+  out.setCreator('Памятки ОСП');
+  const n = Math.max(1, layout.copies || 2);
+  const pages = await out.copyPages(src, Array(n).fill(0));
+  pages.forEach((p) => out.addPage(p));
+  return out.save({ useObjectStreams: true });
+}

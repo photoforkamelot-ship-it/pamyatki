@@ -384,12 +384,15 @@ async function wordOutputs(doc) {
     out.push({ name: [doc.title, r.suffix].filter(Boolean).join(' '), bytes: f.bytes, missing: f.missing });
   }
   // Наклейки: к Word — готовый PDF по 4 на листе (основа из вашего PDF, строки магазина впечатываются)
-  if (doc.pdfBase) {
+  // таблички склада: PDF 4 на листе для двусторонней печати (если основа под этот регион)
+  const lay = doc.pdf4;
+  if (doc.pdfBase && (!lay || !lay.region || lay.region === S.session.region)) {
     try {
       const base = await getBytes(doc.pdfBase);
-      const { buildStickers4 } = await import('../stickers4.js');
-      const pdf = await buildStickers4(base, runs[0].values);
-      out.push({ name: doc.title + ' 4 на листе', bytes: pdf, pdf: true });
+      const m = await import('../stickers4.js');
+      const pdf = lay ? await m.buildSheet4(base, lay, runs[0].values) : await m.buildStickers4(base, runs[0].values);
+      const short = { returnLabels: 'Таблички возврата', ospLabels: 'Таблички ОСП', stickersDocx: 'Наклейки' }[doc.generator] || doc.title;
+      out.push({ name: short + ' 4 на листе', bytes: pdf, pdf: true, duplex: !!lay });
     } catch (e) { toast('PDF 4 на листе: ' + e.message, 'warn'); }
   }
   return out;
@@ -400,7 +403,8 @@ async function deliverFiles(all, archiveName) {
   // PDF идут отдельными файлами рядом с Word (или архивом)
   const pdfs = all.filter((f) => f.pdf);
   const files = all.filter((f) => !f.pdf);
-  const also = pdfs.map((f) => ({ bytes: f.bytes, filename: `${f.name} — ${sessionLabel(S.session)}`, hint: 'PDF: печать односторонняя, масштаб 100% (по размеру страницы — выкл.).' }));
+  const also = pdfs.map((f) => ({ bytes: f.bytes, filename: `${f.name} — ${sessionLabel(S.session)}`,
+    hint: f.duplex ? 'PDF: двусторонняя печать, переворот по длинному краю, масштаб 100%. Оборот листа такой же, как лицо.' : 'PDF: печать односторонняя, масштаб 100% (по размеру страницы — выкл.).' }));
   if (!files.length) {
     if (!pdfs.length) return;
     const [first, ...rest] = also;

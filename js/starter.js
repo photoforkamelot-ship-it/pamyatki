@@ -86,7 +86,7 @@ export async function applyStarter(pack, step = () => {}) {
       let d = (spec.key ? Object.values(s.docs).find((x) => x.key === spec.key) : null)
         || (spec.generator ? sec.items.map((id) => s.docs[id]).find((x) => x && x.generator === spec.generator) : null);
       if (!d) { d = makeDoc('memos', spec.title); s.docs[d.id] = d; sec.items.push(d.id); }
-      for (const k of ['key', 'title', 'when', 'hot', 'process', 'dependsOn', 'generator', 'drive', 'unit']) if (spec[k] !== undefined) d[k] = spec[k];
+      for (const k of ['key', 'title', 'when', 'hot', 'process', 'dependsOn', 'generator', 'drive', 'unit', 'pdf4']) if (spec[k] !== undefined) d[k] = spec[k];
       return d;
     };
     for (const spec of pack.docs || []) docByKey(spec);
