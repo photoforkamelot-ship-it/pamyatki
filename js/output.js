@@ -23,7 +23,7 @@ export function docName(title) {
   return [s.osp, t, date].filter(Boolean).join(' ');
 }
 
-export async function deliver(bytes, filename, { duplex = false, word = false, excel = false, zip = false, note = '' } = {}) {
+export async function deliver(bytes, filename, { duplex = false, word = false, excel = false, zip = false, note = '', also = [] } = {}) {
   const ext = zip ? '.zip' : excel ? '.xlsx' : word ? '.docx' : '.pdf';
   const mime = zip ? 'application/zip' : excel ? XLSX : word ? DOCX : 'application/pdf';
   const office = word || excel || zip;
@@ -33,6 +33,13 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
   const blob = new Blob([bytes], { type: mime });
   const url = URL.createObjectURL(blob);
   const canChat = driveOn() && (inTelegram || S.settings.drive.chatId);
+  // дополнительные файлы (например, PDF к Word) — отправляются и скачиваются вместе с основным
+  const extra = await Promise.all(also.map(async (a) => ({
+    bytes: a.bytes, mime: 'application/pdf',
+    name: docName(a.filename).replace(/\s*\/\s*/g, ' - ').replace(/[\\/:*?"<>|]+/g, ' ').trim() + '.pdf',
+    n: await pageCount(a.bytes), url: URL.createObjectURL(new Blob([a.bytes], { type: 'application/pdf' })), hint: a.hint || '',
+  })));
+  const allFiles = [{ bytes, name, mime, url }, ...extra];
 
   const hint = zip ? 'Архив с файлами Word: распакуйте и печатайте из Word — вёрстка как в ваших исходных файлах.' : excel ? 'Файл Excel в вашей корпоративной форме: печатайте из Excel, масштаб «на одну страницу» уже задан.' : word ? 'Файл Word в вашей корпоративной форме: откройте и печатайте из Word.' : duplex
     ? 'Печать: двусторонняя, переворот по длинному краю. Пустые страницы уже добавлены, документы не залезут друг на друга.'
@@ -41,6 +48,9 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
   const body = h('div', { class: 'deliver' },
     h('div', { class: 'deliver-file' }, icon('file'), h('div', null, h('strong', null, name), h('small', null, office ? `${zip ? 'ZIP' : excel ? 'Excel' : 'Word'} · ${fmtSize(bytes.length)}` : `${pagesWord(n)} · ${fmtSize(bytes.length)}`))),
     h('p', { class: 'note' }, hint),
+    ...extra.map((x) => h('div', null,
+      h('div', { class: 'deliver-file' }, icon('file'), h('div', null, h('strong', null, x.name), h('small', null, `${pagesWord(x.n)} · ${fmtSize(x.bytes.length)}`))),
+      x.hint ? h('p', { class: 'note' }, x.hint) : null)),
     note ? h('p', { class: 'note warn' }, note) : null,
     inTelegram && !driveOn()
       ? h('p', { class: 'note warn' }, 'Внутри Telegram скачивание файлов работает не на всех устройствах. Подключите Google Диск в настройках, и готовый файл будет приходить прямо в чат с ботом.')
@@ -51,27 +61,33 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
   if (canChat) {
     actions.push({ label: 'Отправить в чат', kind: 'primary', keepOpen: true, onClick: async () => {
       try {
-        await withBusy('Отправляю в Telegram…', () => sendToChat(bytes, name, name.replace(/\.[a-z]+$/i, '')));
-        toast('Файл отправлен в чат с ботом');
+        await withBusy('Отправляю в Telegram…', async () => { for (const f of allFiles) await sendToChat(f.bytes, f.name, f.name.replace(/\.[a-z]+$/i, '')); });
+        toast(allFiles.length > 1 ? `Файлы отправлены в чат с ботом: ${allFiles.length}` : 'Файл отправлен в чат с ботом');
       } catch (e) { toast('Не отправилось: ' + e.message, 'warn'); }
     } });
   }
   if (driveOn()) {
     actions.push({ label: 'На Google Диск', kind: canChat ? 'ghost' : 'primary', keepOpen: true, onClick: async () => {
       try {
-        const link = await withBusy('Сохраняю на Диск…', () => saveForPrint(bytes, name, mime));
+        let link = '';
+        await withBusy('Сохраняю на Диск…', async () => { for (const f of allFiles) { const l = await saveForPrint(f.bytes, f.name, f.mime); link = link || l; } });
         toast('Сохранено в папку «Печать»');
         if (link) openExternal(link);
       } catch (e) { toast('Ошибка Диска: ' + e.message, 'warn'); }
     } });
   }
   actions.push({ label: 'Скачать', kind: actions.length ? 'ghost' : 'primary', keepOpen: true, onClick: () => {
-    const a = h('a', { href: url, download: name, style: { display: 'none' } });
-    document.body.appendChild(a); a.click(); a.remove();
+    allFiles.forEach((f, i) => setTimeout(() => {
+      const a = h('a', { href: f.url, download: f.name, style: { display: 'none' } });
+      document.body.appendChild(a); a.click(); a.remove();
+    }, i * 400));
   } });
   if (!inTelegram && !office) {
     actions.push({ label: 'Открыть для печати', kind: 'ghost', keepOpen: true, onClick: () => window.open(url, '_blank') });
   }
+  if (!inTelegram && extra.length) {
+    actions.push({ label: 'Открыть PDF', kind: 'ghost', keepOpen: true, onClick: () => window.open(extra[0].url, '_blank') });
+  }
 
-  await openModal({ title: 'Файл готов', body, actions, onClose: () => setTimeout(() => URL.revokeObjectURL(url), 60000) }).promise;
+  await openModal({ title: 'Файл готов', body, actions, onClose: () => setTimeout(() => allFiles.forEach((f) => URL.revokeObjectURL(f.url)), 60000) }).promise;
 }

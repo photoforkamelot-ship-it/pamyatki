@@ -380,18 +380,35 @@ async function wordOutputs(doc) {
   const runs = tpl ? templateRuns(doc.generator, S.session) : [{ suffix: '', values: baseValues(S.session) }];
   const out = [];
   for (const r of runs) {
-    const f = await fillDocx(bytes, r.values);
+    const f = await fillDocx(bytes, r.values, { fit: (GENERATORS[doc.generator] || {}).fit });
     out.push({ name: [doc.title, r.suffix].filter(Boolean).join(' '), bytes: f.bytes, missing: f.missing });
+  }
+  // Наклейки: к Word — готовый PDF по 4 на листе (основа из вашего PDF, строки магазина впечатываются)
+  if (doc.pdfBase) {
+    try {
+      const base = await getBytes(doc.pdfBase);
+      const { buildStickers4 } = await import('../stickers4.js');
+      const pdf = await buildStickers4(base, runs[0].values);
+      out.push({ name: doc.title + ' 4 на листе', bytes: pdf, pdf: true });
+    } catch (e) { toast('PDF 4 на листе: ' + e.message, 'warn'); }
   }
   return out;
 }
 
 // Несколько файлов — одним архивом
-async function deliverFiles(files, archiveName) {
-  if (!files.length) return;
+async function deliverFiles(all, archiveName) {
+  // PDF идут отдельными файлами рядом с Word (или архивом)
+  const pdfs = all.filter((f) => f.pdf);
+  const files = all.filter((f) => !f.pdf);
+  const also = pdfs.map((f) => ({ bytes: f.bytes, filename: `${f.name} — ${sessionLabel(S.session)}`, hint: 'PDF: печать односторонняя, масштаб 100% (по размеру страницы — выкл.).' }));
+  if (!files.length) {
+    if (!pdfs.length) return;
+    const [first, ...rest] = also;
+    return deliver(first.bytes, first.filename, { also: rest });
+  }
   if (files.length === 1) {
     const f = files[0];
-    return deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { word: true, note: f.missing && f.missing.length ? 'Не заполнены метки: ' + f.missing.join(', ') : '' });
+    return deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { word: true, also, note: f.missing && f.missing.length ? 'Не заполнены метки: ' + f.missing.join(', ') : '' });
   }
   const JSZip = await ensureZip();
   const zip = new JSZip();
@@ -403,7 +420,7 @@ async function deliverFiles(files, archiveName) {
     zip.file(n + '.docx', f.bytes);
   }
   const bytes = await zip.generateAsync({ type: 'uint8array' });
-  return deliver(bytes, archiveName, { zip: true, note: `В архиве ${files.length} файлов Word.` });
+  return deliver(bytes, archiveName, { zip: true, also, note: `В архиве ${files.length} файлов Word.` });
 }
 async function ensureZip() {
   if (window.JSZip) return window.JSZip;

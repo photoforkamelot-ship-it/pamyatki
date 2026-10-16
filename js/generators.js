@@ -293,9 +293,11 @@ export const GENERATORS = {
   },
 
   stickersDocx: {
-    label: 'Наклейки (Word)',
+    label: 'Наклейки (Word + PDF 4 на листе)',
     tpl: true,
     word: true,
+    // огнетушители (стр. 19–20): адрес и строка «ОСП: город Магазин № …» уменьшаются, чтобы не переезжать на следующую страницу
+    fit: [{ tags: ['ADDRESS'], k: 950, min: 18, max: 30 }, { tags: ['CITY', 'OSP'], k: 1400, min: 20 }, { tags: ['MGR'], k: 1400, min: 28 }, { tags: ['N1', 'N2', 'N3', 'N4', 'N5', 'N6', 'N7'], k: 1100, min: 22 }],
     build() { return [{ t: 'p', text: 'Наклейки собираются в Word-файл по загруженному шаблону.' }]; },
   },
 };

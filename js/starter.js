@@ -98,6 +98,7 @@ export async function applyStarter(pack, step = () => {}) {
         const role = f.role || 'file';
         if (role === 'file') d.file = meta;
         else if (role === 'cover') d.cover = meta;
+        else if (role === 'pdf4') d.pdfBase = meta;
         else if (role.startsWith('variant:')) { d.variants = d.variants || {}; d.variants[role.slice(8)] = meta; }
         else if (role.startsWith('tpl:')) { d.tplVariants = d.tplVariants || {}; d.tplVariants[role.slice(4)] = meta; }
         else if (role.startsWith('rows:')) { d.xvariants = d.xvariants || {}; d.xvariants[role.slice(5)] = meta; }
