@@ -159,9 +159,9 @@ export function packDiff(pack, prev, firstAuto) {
   return { pack: out, changed, files: out.files.length };
 }
 
-export function rememberPack(pack) {
+export function rememberPack(pack, built) {
   if (!pack || !pack.version) return;
-  update((s) => { s.settings.pack = { version: pack.version, hashes: pack.hashes }; }, { silent: true });
+  update((s) => { s.settings.pack = { version: pack.version, hashes: pack.hashes, built: built || '', applied: new Date().toISOString() }; }, { silent: true });
 }
 
 async function decryptPack(buf, key) {
@@ -176,20 +176,24 @@ async function decryptPack(buf, key) {
 }
 
 let running = false;
+// Результат: { status: 'updated' | 'same' | 'nokey' | 'offline' | 'error', version, built, done, error }
 export async function autoStarter({ force = false } = {}) {
-  if (running || !window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined') return null;
+  if (running) return { status: 'busy' };
+  if (!window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined') return { status: 'error', error: 'браузер слишком старый для автообновления — загрузите файл' };
   running = true;
+  let site = {};
   try {
     const base = new URL('../pack/', import.meta.url);
-    const vr = await fetch(new URL('version.json', base), { cache: 'no-store' });
-    if (!vr.ok) return null;
-    const { version } = await vr.json();
+    const vr = await fetch(new URL('version.json', base), { cache: 'no-store' }).catch(() => null);
+    if (!vr || !vr.ok) return { status: 'offline' };
+    site = await vr.json();
     const cur = S.settings.pack || null;
-    if (!force && cur && cur.version === version) return null;
+    if (!force && cur && cur.version === site.version) return { status: 'same', ...site };
     const { driveOn, call } = await import('./drive.js');
     let key = S.settings.drive.key;
-    if (!key && driveOn()) { try { key = (await call('packKey')).key; } catch (e) { console.warn('Ключ пакета', e); } }
-    if (!key) return null;
+    let keyErr = '';
+    if (!key && driveOn()) { try { key = (await call('packKey')).key; } catch (e) { keyErr = e.message; } }
+    if (!key) return { status: 'nokey', error: keyErr, ...site };
     const { toast, withBusy } = await import('./ui.js');
     const first = !S.settings.starterLoaded;
     const run = async (step) => {
@@ -199,15 +203,14 @@ export async function autoStarter({ force = false } = {}) {
       const pack = await decryptPack(new Uint8Array(await r.arrayBuffer()), key);
       const d = packDiff(pack, cur && cur.hashes, !cur && S.settings.starterLoaded);
       const done = (d.changed.length || d.files) ? await applyStarter(d.pack, step) : [];
-      rememberPack(pack);
+      rememberPack(pack, site.built);
       return done;
     };
-    // первый запуск — с заставкой; обновление уже настроенного приложения — тихо, в фоне
     const done = first ? await withBusy('Загружаю шаблоны и настройки…', run) : await run(() => {});
-    if (done && done.length) toast('Обновлено: ' + done.join(', '));
-    return done;
+    if (done && done.length && !force) toast('Обновлено: ' + done.join(', '));
+    return { status: done && done.length ? 'updated' : 'same', done, ...site };
   } catch (e) {
     console.warn('Автообновление пакета', e);
-    return null;
+    return { status: 'error', error: e.message, ...site };
   } finally { running = false; }
 }

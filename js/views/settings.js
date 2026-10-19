@@ -178,7 +178,7 @@ export function renderSettings(root, close) {
         h('button', { class: 'btn ghost sm', onClick: contactsDlg }, 'Справочник контактов'),
         h('button', { class: 'btn ghost sm', onClick: orgDlg }, 'Реквизиты организации'),
       ),
-      h('p', { class: 'cap' }, `Стартовый пакет — контакты, деления, опорный план, зоны и шаблоны. Обновляется сам при входе: на сайте лежит зашифрованная копия, ключ выдаёт ваш скрипт. Обновляются только изменившиеся части — ваши отметки не сбрасываются.${S.settings.pack ? ' Версия: ' + S.settings.pack.version.slice(0, 7) + '.' : ''}`),
+      h('p', { class: 'cap' }, `Стартовый пакет — контакты, деления, опорный план, зоны и шаблоны. Обновляется сам при входе: на сайте лежит зашифрованная копия, ключ выдаёт ваш скрипт. Обновляются только изменившиеся части — ваши отметки не сбрасываются.${S.settings.pack ? ` Ваша версия: от ${fmtStamp(S.settings.pack.built)} (применена ${fmtStamp(S.settings.pack.applied)}).` : ' Автообновление ещё не срабатывало.'}`),
       h('div', { class: 'row-actions' },
         h('button', { class: 'btn ghost sm', onClick: async () => { const ok = await requestPersist(); toast(ok ? 'Браузер не будет очищать данные приложения' : 'Браузер не разрешил закрепить хранилище'); } }, 'Закрепить хранилище'),
         h('button', { class: 'btn ghost sm', onClick: exportBackup }, 'Резервная копия'),
@@ -294,10 +294,23 @@ export async function orgDlg() {
   if (v) update(() => { Object.assign(o, v, { returnCopies: Number(v.returnCopies) || 4 }); });
 }
 
+const fmtStamp = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' }); };
+
 async function checkStarter() {
-  const done = await autoStarter({ force: true });
-  if (done === null) toast(driveOn() || S.settings.drive.key ? 'Обновлений нет' : 'Подключите Google Диск (скрипт) — без него ключ к пакету не получить', driveOn() ? '' : 'warn');
-  else if (!done.length) toast('Всё уже актуально');
+  const r = await withBusy('Проверяю обновления…', () => autoStarter({ force: true }));
+  const cur = S.settings.pack;
+  const mine = cur ? `У вас версия от ${fmtStamp(cur.built)}` : 'Пакет ещё не загружался автоматически';
+  const onSite = r.built ? `на сайте — от ${fmtStamp(r.built)}` : '';
+  const msg = {
+    updated: `Обновлено: ${(r.done || []).join(', ')}. ${mine}.`,
+    same: `Всё актуально. ${mine}.`,
+    nokey: `Не получен ключ к пакету${r.error ? ' (' + r.error + ')' : ''}. Нужна новая версия скрипта Google (действие packKey) или ключ в настройках Диска. ${mine}${onSite ? ', ' + onSite : ''}.`,
+    offline: 'Сайт с обновлениями недоступен — проверьте интернет.',
+    error: `Ошибка обновления: ${r.error || ''}`,
+    busy: 'Обновление уже идёт…',
+  }[r.status] || 'Не удалось проверить';
+  await openModal({ title: 'Стартовый пакет', body: h('p', { class: 'note' }, msg), actions: [{ label: 'Понятно', kind: 'primary' }] }).promise;
+  update(() => {});
 }
 
 export async function importStarter() {
