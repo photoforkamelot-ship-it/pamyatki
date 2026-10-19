@@ -4,7 +4,7 @@ import { S, update, activeFile, setActiveFile, makeDoc, dependValue, DEPENDS, se
 import { openModal, confirmDlg, choiceDlg, promptDlg, pickFiles, toast, withBusy, menu, toggle } from '../ui.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
 import { buildPrint, renderThumbs, diffText, blocksToPdf } from '../pdf.js';
-import { deliver, docName } from '../output.js';
+import { deliver, docName, excelPdf } from '../output.js';
 import { GENERATORS, baseValues, templateRuns } from '../generators.js';
 import { fillDocx, isDocx } from '../docx.js';
 import { renderBlocks } from '../pages.js';
@@ -394,6 +394,19 @@ async function wordOutputs(doc) {
       const short = { returnLabels: 'Таблички возврата', ospLabels: 'Таблички ОСП', stickersDocx: 'Наклейки' }[doc.generator] || doc.title;
       out.push({ name: short + ' 4 на листе', bytes: pdf, pdf: true, duplex: !!lay });
     } catch (e) { toast('PDF 4 на листе: ' + e.message, 'warn'); }
+  } else if (doc.wpdf && doc.wpdfBase && tpl) {
+    // PDF к Word: ваш шаблон, заранее свёрстанный в PDF, + строки с данными
+    try {
+      const base = await getBytes(doc.wpdfBase);
+      const { buildWordPdf, mergePdfs, nUp } = await import('../wordpdf.js');
+      const pdfs = [];
+      for (const r of runs) pdfs.push(await buildWordPdf(base, doc.wpdf, r.values));
+      let pdf = await mergePdfs(pdfs);
+      const n = doc.wpdf.nup || 1;
+      if (n > 1) pdf = await nUp(pdf, { n, frame: !!doc.wpdf.frame });
+      const short = { returnLabels: 'Таблички возврата', ospLabels: 'Таблички ОСП' }[doc.generator] || doc.title;
+      out.push({ name: short + (n > 1 ? ` ${n} на листе` : ''), bytes: pdf, pdf: true, duplex: !!doc.wpdf.duplex });
+    } catch (e) { console.error(e); toast('PDF: ' + e.message, 'warn'); }
   }
   return out;
 }
@@ -527,7 +540,10 @@ export async function printDocs(tab, list, { single = false, title } = {}) {
   for (const { doc } of excels) {
     try {
       const out = await excelOutputs(doc);
-      for (const f of out) await deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { excel: true });
+      for (const f of out) {
+        const also = await excelPdf(f.bytes, f.name);
+        await deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { excel: true, also });
+      }
       if (out.length) update(() => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; });
     } catch (e) { toast('Excel: ' + e.message, 'warn'); }
   }

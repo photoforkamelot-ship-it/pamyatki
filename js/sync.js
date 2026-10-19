@@ -12,7 +12,7 @@ export function allMetas() {
   for (const d of Object.values(S.docs)) {
     const tab = tabById(d.tabId);
     const folder = tab ? tab.title : 'Файлы';
-    add(d.file, folder); add(d.cover, folder); add(d.pdfBase, folder);
+    add(d.file, folder); add(d.cover, folder); add(d.pdfBase, folder); add(d.wpdfBase, folder);
     for (const v of Object.values(d.variants || {})) add(v, folder);
     for (const v of Object.values(d.tplVariants || {})) add(v, folder);
     for (const v of Object.values(d.xvariants || {})) add(v, folder);

@@ -3,7 +3,7 @@ import { h, icon, uid, fmtDate, monthKey, clone } from '../util.js';
 import { S, update, sessionLabel, SHELF_KINDS } from '../store.js';
 import { openModal, confirmDlg, promptDlg, toast, withBusy, formDlg, menu } from '../ui.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
-import { deliver } from '../output.js';
+import { deliver, excelPdf } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
 import { setSheetsCells } from '../xlsx.js';
 import { getBytes } from '../files.js';
@@ -262,15 +262,18 @@ export async function printShelves() {
   const perPage = cur().perPage || 2;
   const items = S.shelves.groupsOrder.flatMap((g) => S.shelves.catalog.filter((it) => it.group === g && pick(it.id) && pick(it.id).on));
   if (S.shelves.xlsxTpl) {
-    const how = await choiceDlg('Деления', 'Excel — ваш файл с листом «ПЕЧАТЬ»: шрифты, рамки и окошки как в оригинале. PDF — карточки, собранные приложением.', [
-      { label: 'PDF', value: 'pdf' }, { label: 'Excel (лист «ПЕЧАТЬ»)', value: 'xlsx', kind: 'primary' },
+    const how = await choiceDlg('Деления', 'Excel + PDF — ваш файл с листом «ПЕЧАТЬ» и PDF как печать из Excel (только выбранные карточки). Упрощённо — карточки, собранные приложением.', [
+      { label: 'Упрощённо', value: 'pdf' }, { label: 'Excel + PDF', value: 'xlsx', kind: 'primary' },
     ]);
     if (!how) return;
     if (how === 'xlsx') {
       try {
         const bytes = await withBusy('Заполняю ваш файл делений…', () => shelvesXlsx(items));
         const noXl = items.filter((it) => !it.src);
-        return deliver(bytes, `Деления — ${sessionLabel(S.session)}`, { excel: true, note: `Печатайте лист «ПЕЧАТЬ». Выбрано карточек: ${items.length}: ${items.map((it) => it.name).join(', ')}.` + (noXl.length ? ` Нет в файле (будут только в PDF): ${noXl.map((it) => it.name).join(', ')}.` : '') });
+        // PDF — только страницы выбранных карточек (карточка из черновика C2 на листе «ПЕЧАТЬ» начинается в B1)
+        const anchors = items.filter((it) => it.src).map((it) => { const [, c, r] = it.src.match(/^([A-Z]+)(\d+)$/); return [Number(r) - 1, colN(c) - 1]; });
+        const also = await excelPdf(bytes, 'Деления', { sheet: PRINT, keep: anchors.length ? (rb, cb) => anchors.some(([r, c]) => r >= rb[0] && r <= rb[1] && c >= cb[0] && c <= cb[1]) : null, hint: `PDF: лист «ПЕЧАТЬ», только выбранные карточки (${anchors.length}).` });
+        return deliver(bytes, `Деления — ${sessionLabel(S.session)}`, { excel: true, also, note: `Печатайте лист «ПЕЧАТЬ». Выбрано карточек: ${items.length}: ${items.map((it) => it.name).join(', ')}.` + (noXl.length ? ` Нет в файле (будут только в PDF): ${noXl.map((it) => it.name).join(', ')}.` : '') });
       } catch (e) { toast('Excel: ' + e.message, 'warn'); return; }
     }
   }

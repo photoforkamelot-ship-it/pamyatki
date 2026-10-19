@@ -4,7 +4,7 @@ import { h, icon, uid, shortFio, surname, fmtDate } from '../util.js';
 import { S, update, sessionLabel, SCHEDULE_BLOCKS } from '../store.js';
 import { openModal, promptDlg, confirmDlg, menu, toast, withBusy, formDlg, toggle } from '../ui.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
-import { deliver } from '../output.js';
+import { deliver, excelPdf } from '../output.js';
 import { driveOn, sendToChat } from '../drive.js';
 import { inTelegram } from '../tg.js';
 import { tabSettingsDlg } from './settings.js';
@@ -449,11 +449,14 @@ async function printWhich(which, title) {
     const files = await withBusy('Заполняю ваш шаблон…', () => makeXlsx(which));
     const needPdf = (which === 'resp' && !tpls().resp) || (which === 'yach' && !tpls().yach) || (which === 'both' && !files.length);
     if (needPdf) { const b = await withBusy('Собираю…', () => makePdf(which)); return deliver(b, `${title} — ${sessionLabel(S.session)}`, { note: 'Шаблон Excel не загружен — это упрощённая версия.' }); }
-    if (files.length === 1) return deliver(files[0].bytes, `${files[0].name} — ${sessionLabel(S.session)}`, { excel: true });
+    // к каждому Excel — PDF, как напечатал бы Excel
+    const also = [];
+    for (const f of files) also.push(...await excelPdf(f.bytes, f.name));
+    if (files.length === 1) return deliver(files[0].bytes, `${files[0].name} — ${sessionLabel(S.session)}`, { excel: true, also });
     const JSZip = window.JSZip;
     const zip = new JSZip();
     files.forEach((f) => zip.file(`${f.name} — ${sessionLabel(S.session)}.xlsx`, f.bytes));
-    deliver(await zip.generateAsync({ type: 'uint8array' }), `${title} — ${sessionLabel(S.session)}`, { zip: true, note: 'В архиве два файла Excel в ваших формах.' });
+    deliver(await zip.generateAsync({ type: 'uint8array' }), `${title} — ${sessionLabel(S.session)}`, { zip: true, also, note: 'В архиве два файла Excel в ваших формах. PDF — отдельными файлами.' });
   } catch (e) { console.error(e); toast('Ошибка: ' + e.message, 'warn'); }
 }
 const printResp = () => printWhich('resp', 'Зоны ответственности');

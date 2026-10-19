@@ -91,3 +91,13 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
 
   await openModal({ title: 'Файл готов', body, actions, onClose: () => setTimeout(() => allFiles.forEach((f) => URL.revokeObjectURL(f.url)), 60000) }).promise;
 }
+
+// PDF к файлу Excel — как напечатал бы Excel (масштаб, поля, разрывы из файла)
+export async function excelPdf(bytes, name, opts = {}) {
+  try {
+    const { xlsxToPdf } = await import('./xlsxpdf.js');
+    const pdf = await withBusy('Собираю PDF…', (step) => xlsxToPdf(bytes, { ...opts, onProgress: (i, n) => step(`PDF: страница ${i} из ${n}`) }));
+    return [{ bytes: pdf, filename: `${name} — ${sessionLabel(S.session)}`, hint: opts.hint || 'PDF: как печать из Excel — масштаб и поля из вашего файла.' }];
+  } catch (e) { console.error(e); toast('PDF из Excel: ' + e.message, 'warn'); return []; }
+}
+
