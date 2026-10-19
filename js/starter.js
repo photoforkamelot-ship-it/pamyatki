@@ -2,7 +2,8 @@
 // Хранится отдельным файлом, а не в коде, чтобы рабочие данные не попадали в открытый репозиторий.
 import { S, update, makeDoc } from './store.js';
 import { uid, base64ToBytes } from './util.js';
-import { analyze, storeAnalyzed } from './files.js';
+import { analyze, storeAnalyzed, dropFile } from './files.js';
+import { allMetas } from './sync.js';
 import { dative } from './generators.js';
 
 function planTree(rows) {
@@ -32,6 +33,7 @@ export async function applyStarter(pack, step = () => {}) {
     const meta = await storeAnalyzed(info, { compression: f.compression || 'light', tabId: 'memos', padEven: f.padEven !== false });
     files.push({ f, meta });
   }
+  const before = allMetas().map(([m]) => m);
   update((s) => {
     if (pack.org) { Object.assign(s.settings.org, pack.org); done.push('реквизиты'); }
     if (pack.lists) {
@@ -131,5 +133,81 @@ export async function applyStarter(pack, step = () => {}) {
     s.selection.memos = undefined;
     s.settings.starterLoaded = true;
   });
+  // заменённые версии шаблонов больше не нужны — освобождаем место (и копии на Диске)
+  const now = new Set(allMetas().map(([m]) => m.key));
+  for (const m of before) if (!now.has(m.key)) dropFile(m).catch(() => {});
   return done;
+}
+
+// ---------- автообновление стартового пакета с сайта ----------
+// На сайте лежит зашифрованная копия (pack/starter.bin) и её версия (pack/version.json).
+// Ключ — секрет скрипта: берём из настроек или просим у скрипта (он отдаёт только тем, кому открыт доступ).
+// Применяются только изменившиеся разделы и файлы, чтобы не сбрасывать вашу работу (деления, зоны, план).
+
+// разделы, которые перезаписывают рабочие данные; при первом автообновлении уже настроенного приложения их не трогаем
+const KEEP_ON_FIRST = ['shelves', 'zones', 'plan', 'directory', 'sessionDefaults', 'schedule'];
+
+export function packDiff(pack, prev, firstAuto) {
+  const h = pack.hashes || { sections: {}, files: {} };
+  const out = { ...pack };
+  const changed = [];
+  for (const k of Object.keys(h.sections)) {
+    const same = prev ? prev.sections && prev.sections[k] === h.sections[k] : firstAuto && KEEP_ON_FIRST.includes(k);
+    if (same) delete out[k]; else changed.push(k);
+  }
+  out.files = (pack.files || []).filter((f) => !(prev && prev.files && f.key && prev.files[f.key] === h.files[f.key]));
+  return { pack: out, changed, files: out.files.length };
+}
+
+export function rememberPack(pack) {
+  if (!pack || !pack.version) return;
+  update((s) => { s.settings.pack = { version: pack.version, hashes: pack.hashes }; }, { silent: true });
+}
+
+async function decryptPack(buf, key) {
+  const magic = new TextDecoder().decode(buf.slice(0, 4));
+  if (magic !== 'OSP1') throw new Error('неизвестный формат пакета');
+  const salt = buf.slice(4, 20), iv = buf.slice(20, 32), data = buf.slice(32);
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), 'PBKDF2', false, ['deriveKey']);
+  const k = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv }, k, data);
+  const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(stream).text());
+}
+
+let running = false;
+export async function autoStarter({ force = false } = {}) {
+  if (running || !window.crypto || !crypto.subtle || typeof DecompressionStream === 'undefined') return null;
+  running = true;
+  try {
+    const base = new URL('../pack/', import.meta.url);
+    const vr = await fetch(new URL('version.json', base), { cache: 'no-store' });
+    if (!vr.ok) return null;
+    const { version } = await vr.json();
+    const cur = S.settings.pack || null;
+    if (!force && cur && cur.version === version) return null;
+    const { driveOn, call } = await import('./drive.js');
+    let key = S.settings.drive.key;
+    if (!key && driveOn()) { try { key = (await call('packKey')).key; } catch (e) { console.warn('Ключ пакета', e); } }
+    if (!key) return null;
+    const { toast, withBusy } = await import('./ui.js');
+    const first = !S.settings.starterLoaded;
+    const run = async (step) => {
+      step('Скачиваю обновление…');
+      const r = await fetch(new URL('starter.bin', base), { cache: 'no-store' });
+      if (!r.ok) throw new Error('пакет не скачался');
+      const pack = await decryptPack(new Uint8Array(await r.arrayBuffer()), key);
+      const d = packDiff(pack, cur && cur.hashes, !cur && S.settings.starterLoaded);
+      const done = (d.changed.length || d.files) ? await applyStarter(d.pack, step) : [];
+      rememberPack(pack);
+      return done;
+    };
+    // первый запуск — с заставкой; обновление уже настроенного приложения — тихо, в фоне
+    const done = first ? await withBusy('Загружаю шаблоны и настройки…', run) : await run(() => {});
+    if (done && done.length) toast('Обновлено: ' + done.join(', '));
+    return done;
+  } catch (e) {
+    console.warn('Автообновление пакета', e);
+    return null;
+  } finally { running = false; }
 }

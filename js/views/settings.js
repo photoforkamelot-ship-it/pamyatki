@@ -1,7 +1,7 @@
 // Настройки: вкладки (порядок, объединение, скрытие), отображение, печать, Google Диск, данные.
 import { h, icon, fmtSize, fmtDateTime, uid } from '../util.js';
 import { S, update, replaceState, tabById, makeTab, CONTACT_LISTS } from '../store.js';
-import { applyStarter } from '../starter.js';
+import { applyStarter, rememberPack, autoStarter } from '../starter.js';
 import { dative } from '../generators.js';
 import { openModal, confirmDlg, choiceDlg, promptDlg, toggle, toast, withBusy, formDlg, pickFiles } from '../ui.js';
 import { storageInfo, requestPersist, fileKeys, fileGet, filePut } from '../db.js';
@@ -173,11 +173,12 @@ export function renderSettings(root, close) {
       h('div', { class: 'card-head' }, h('h2', null, 'Данные')),
       storageLine,
       h('div', { class: 'row-actions' },
-        h('button', { class: 'btn primary sm', onClick: importStarter }, 'Загрузить стартовый пакет'),
+        h('button', { class: 'btn primary sm', onClick: checkStarter }, 'Проверить обновления'),
+        h('button', { class: 'btn ghost sm', onClick: importStarter }, 'Загрузить из файла'),
         h('button', { class: 'btn ghost sm', onClick: contactsDlg }, 'Справочник контактов'),
         h('button', { class: 'btn ghost sm', onClick: orgDlg }, 'Реквизиты организации'),
       ),
-      h('p', { class: 'cap' }, 'Стартовый пакет — файл с вашими контактами, делениями, опорным планом, зонами и шаблонами. Он не хранится в открытом коде приложения.'),
+      h('p', { class: 'cap' }, `Стартовый пакет — контакты, деления, опорный план, зоны и шаблоны. Обновляется сам при входе: на сайте лежит зашифрованная копия, ключ выдаёт ваш скрипт. Обновляются только изменившиеся части — ваши отметки не сбрасываются.${S.settings.pack ? ' Версия: ' + S.settings.pack.version.slice(0, 7) + '.' : ''}`),
       h('div', { class: 'row-actions' },
         h('button', { class: 'btn ghost sm', onClick: async () => { const ok = await requestPersist(); toast(ok ? 'Браузер не будет очищать данные приложения' : 'Браузер не разрешил закрепить хранилище'); } }, 'Закрепить хранилище'),
         h('button', { class: 'btn ghost sm', onClick: exportBackup }, 'Резервная копия'),
@@ -293,6 +294,12 @@ export async function orgDlg() {
   if (v) update(() => { Object.assign(o, v, { returnCopies: Number(v.returnCopies) || 4 }); });
 }
 
+async function checkStarter() {
+  const done = await autoStarter({ force: true });
+  if (done === null) toast(driveOn() || S.settings.drive.key ? 'Обновлений нет' : 'Подключите Google Диск (скрипт) — без него ключ к пакету не получить', driveOn() ? '' : 'warn');
+  else if (!done.length) toast('Всё уже актуально');
+}
+
 export async function importStarter() {
   const [f] = await pickFiles({ accept: 'application/json,.json' });
   if (!f) return;
@@ -300,6 +307,7 @@ export async function importStarter() {
     const pack = JSON.parse(await f.text());
     if (pack.app !== 'pamyatki-osp' || pack.kind !== 'starter') throw new Error('Это не стартовый пакет');
     const r = await withBusy('Загружаю стартовый пакет…', (step) => applyStarter(pack, step));
+    rememberPack(pack);
     toast(`Загружено: ${r.join(', ')}`);
   } catch (e) { toast('Ошибка: ' + e.message, 'warn'); }
 }

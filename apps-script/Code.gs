@@ -37,6 +37,11 @@ var ACTIONS = {
     return { folder: root_().getName() };
   },
 
+  // ключ для расшифровки стартового пакета с сайта — только тем, кому открыт доступ (ключ или Telegram из ALLOWED_IDS)
+  packKey: function () {
+    return { key: prop_('PACK_KEY') || prop_('SECRET') };
+  },
+
   putFile: function (req) {
     var folder = sub_(req.folder || 'Файлы');
     var blob = Utilities.newBlob(Utilities.base64Decode(req.base64), req.mime || 'application/pdf', req.name || 'file.pdf');

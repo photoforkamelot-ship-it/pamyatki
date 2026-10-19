@@ -15,6 +15,7 @@ import { renderSettings, createTab } from './views/settings.js';
 import { onboarding } from './views/session.js';
 import './drive.js';
 import { bootSync } from './sync.js';
+import { autoStarter } from './starter.js';
 
 const VIEWS = { memos: renderMemos, docs: renderDocsTab, schedule: renderSchedule, plan: renderPlan, contracts: renderContracts, shelves: renderShelves, people: renderPeople, materials: renderMaterials };
 
@@ -154,7 +155,8 @@ async function boot() {
   onChange(render);
   render();
   document.body.classList.add('ready');
-  bootSync();
+  // сначала данные с Диска, потом свежий стартовый пакет с сайта
+  bootSync().then(() => autoStarter());
   if (!S.session.city && !S.session.osp && !S.sessions.length) setTimeout(onboarding, 400);
   // файлы «Памяток», которые живут на Google Диске (памятка сотрудникам) — проверяем обновления
   const last = Number(localStorage.getItem('driveDocsCheck') || 0);

@@ -9,7 +9,7 @@ export function renderMemos(tab, root) {
   const top = h('div', { class: 'view-inner' },
     !S.settings.starterLoaded ? h('div', { class: 'banner' },
       h('strong', null, 'Загрузите стартовый пакет'),
-      h('span', null, 'В нём ваши контакты, реквизиты, деления, опорный план, зоны и шаблон наклеек.'),
+      h('span', null, 'В нём ваши контакты, реквизиты, деления, опорный план, зоны и шаблоны. Обычно он подтягивается сам при входе через бота; если нет — загрузите файл.'),
       h('div', { class: 'row-actions' }, h('button', { class: 'btn primary sm', onClick: importStarter }, 'Выбрать файл'))) : null,
     renderSessionCard(),
   );
