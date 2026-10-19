@@ -154,6 +154,8 @@ export const GENERATORS = {
   returnLabels: {
     tpl: true,
     label: 'Таблички возврата',
+    // длинный адрес или номер ОСП уменьшается, чтобы табличка не переезжала на следующую страницу (образец КР77: адрес 47 пт)
+    fit: [{ tags: ['АДРЕС_КОМП', 'АДРЕС_ВЕРХ'], k: 1600, min: 20 }, { tags: ['ОСП'], k: 1300, min: 120 }],
     build(s) {
       const n = Math.max(1, Number((S.settings.org || {}).returnCopies) || 4);
       const head = () => [
