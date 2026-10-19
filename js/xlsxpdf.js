@@ -468,7 +468,7 @@ const DASH = { dotted: [0.6, 1.2], dashed: [2.4, 1.2], dashDot: [3, 1, 1, 1], da
 /**
  * xlsx -> PDF. opts.sheet — имя листа (по умолчанию первый видимый).
  */
-export async function xlsxToPdf(bytes, { sheet, onProgress, debug, scale: forceScale, keep } = {}) {
+export async function xlsxToPdf(bytes, { sheet, onProgress, debug, scale: forceScale, keep, lastCol } = {}) {
   const book = await readBook(bytes);
   const loaded = {};
   for (const s of book.sheets) loaded[s.name] = await readSheet(book, s);
@@ -480,6 +480,8 @@ export async function xlsxToPdf(bytes, { sheet, onProgress, debug, scale: forceS
 
   const { colPt, rowPt } = layoutSheet(book, sh);
   const range = printRange(book, sh, idx);
+  // печатать только до указанного столбца (служебные формулы правее бланка не нужны)
+  if (range && lastCol) range.c2 = Math.min(range.c2, typeof lastCol === 'string' ? colNum(lastCol) : lastCol);
   const out = await PDFDocument.create();
   out.setCreator('Памятки ОСП');
   if (!range) { out.addPage([595.28, 841.89]); return out.save(); }

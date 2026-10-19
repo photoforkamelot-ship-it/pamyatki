@@ -541,7 +541,8 @@ export async function printDocs(tab, list, { single = false, title } = {}) {
     try {
       const out = await excelOutputs(doc);
       for (const f of out) {
-        const also = await excelPdf(f.bytes, f.name);
+        // табель: бланк заканчивается столбцом AP, правее — служебные формулы старых шаблонов
+        const also = await excelPdf(f.bytes, f.name, doc.generator === 'tabel' ? { lastCol: 'AP' } : {});
         await deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { excel: true, also });
       }
       if (out.length) update(() => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; });
