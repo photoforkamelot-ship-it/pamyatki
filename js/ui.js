@@ -32,10 +32,11 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-export function openModal({ title, body, actions = [], dismissable = true, wide = false, onClose }) {
+export function openModal({ title, body, actions = [], dismissable = true, wide = false, onClose, top = false }) {
   let resolveFn;
   const promise = new Promise((r) => (resolveFn = r));
-  const root = h('div', { class: 'modal-root' });
+  // top — окно с полями ввода: крепится к верху и не прыгает, когда выезжает клавиатура или меню «Вставить»
+  const root = h('div', { class: 'modal-root' + (top ? ' top' : '') });
   const sheet = h('div', { class: 'sheet' + (wide ? ' wide' : ''), role: 'dialog', 'aria-modal': 'true', 'aria-label': title || 'Окно' });
   const entry = { dismissable, close: null };
 
@@ -85,6 +86,7 @@ export function openModal({ title, body, actions = [], dismissable = true, wide 
   sheet.append(head, content, foot);
   root.appendChild(sheet);
   root.addEventListener('mousedown', (e) => { if (e.target === root && dismissable) close(undefined); });
+  if (top) sheet.style.maxHeight = Math.round(window.innerHeight * 0.94) + 'px';
   document.body.appendChild(root);
   document.body.classList.add('no-scroll');
   stack.push(entry);
@@ -124,7 +126,7 @@ export function promptDlg(title, { label, value = '', placeholder = '', multilin
   const id = 'p' + Math.random().toString(36).slice(2, 7);
   input.id = id;
   const m = openModal({
-    title,
+    title, top: true,
     body: h('div', { class: 'field' }, label ? h('label', { for: id }, label) : null, input),
     actions: [
       { label: 'Отмена', kind: 'ghost', value: null },
@@ -154,7 +156,7 @@ export function formDlg(title, fields, okLabel = 'Сохранить') {
     return h('div', { class: 'field' }, h('label', { for: id }, f.label), input);
   }));
   return openModal({
-    title,
+    title, top: true,
     body,
     actions: [
       { label: 'Отмена', kind: 'ghost', value: null },

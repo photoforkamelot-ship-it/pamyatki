@@ -1,6 +1,7 @@
 // Листы, которые собираются из вводных сеанса. Вёрстка повторяет образцы пользователя.
 import { S, sessionLabel } from './store.js';
 import { shortFio, money, fmtDate } from './util.js';
+import { printableRows } from './contactbook.js';
 
 // ---------- помощники ----------
 const up = (s) => String(s || '').toLocaleUpperCase('ru-RU');
@@ -146,7 +147,7 @@ export const GENERATORS = {
     label: 'Табличка ОСП и адрес',
     build(s) {
       const pages = [];
-      for (let i = 0; i < 4; i++) pages.push([{ t: 'gap', h: 60 }, { t: 'center', text: up(s.osp || '____'), size: 96, bold: true, gap: 6, lh: 1.1 }, { t: 'center', text: up(cityLine(s)), size: 17, bold: true, color: '#777', gap: 0 }]);
+      for (let i = 0; i < 4; i++) pages.push([{ t: 'gap', h: 60 }, { t: 'center', text: up(s.osp || '____'), size: 96, bold: true, gap: 6, lh: 1.1 }, { t: 'center', text: up(cityLine(s)), size: 17, bold: true, color: '#777', gap: 26 }, { t: 'center', text: 'МОПы ___шт   КОВЁР ___шт', size: 29, bold: true, color: '#D9D9D9', gap: 0 }]);
       return withPageBreaks(pages);
     },
   },
@@ -167,7 +168,6 @@ export const GENERATORS = {
       for (let i = 0; i < n; i++) {
         pages.push([...head(),
           { t: 'center', text: 'МОПы___шт  КОВЁР___шт', size: 29, bold: true, gap: 22 },
-          { t: 'center', text: 'ЯЩИК___шт  КРЫШКА___шт', size: 29, bold: true, gap: 22 },
           { t: 'center', text: 'ВОЗВРАТ______________', size: 29, bold: true, gap: 0 }]);
         pages.push([...head(), { t: 'gap', h: 20 },
           { t: 'center', text: 'ВОЗВРАТ', size: 38, bold: true, gap: 8 },
@@ -247,11 +247,11 @@ export const GENERATORS = {
     build(s) {
       const line = (k, n) => { const c = contact(k, n); return c ? [c.name, c.phone].filter(Boolean).join(', ') : n || ''; };
       // таблица контактов региона (вкладка «Контакты») — в вашем виде
-      const dir = (S.directory || {})[s.region] || [];
+      const dir = s.region ? printableRows(s.region) : [];
       if (dir.length) {
-        const rows = [['ФИО', 'Направление', 'Телефон', 'Почта / примечание'].map((t) => ({ t, bold: true, fill: '#efefef' }))];
+        const rows = [['ФИО', 'Направление', 'Телефон', 'Электронная почта'].map((t) => ({ t, bold: true, fill: '#B4C6E7' }))];
         for (const r of dir) {
-          if (r.section) rows.push([{ t: r.section, bold: true, fill: '#f6f6f6', span: 4 }]);
+          if (r.section) rows.push([{ t: r.section, bold: true, fill: '#FFF2CC', span: 4 }]);
           else rows.push([{ t: r.name, bold: true }, r.dept || '', (r.phone || '').replace(/,\s*/g, '\n'), r.email || '']);
         }
         return [

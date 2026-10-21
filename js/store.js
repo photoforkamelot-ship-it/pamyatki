@@ -94,6 +94,7 @@ export function newSession(prefill = {}) {
     stickerExtra: '',
     kic: { name: '', email: '' },
     lunchMgr: '15:00-16:00',
+    hiddenContacts: [],
     ...prefill,
   };
 }
@@ -276,6 +277,7 @@ function defaultState() {
     schedule: { zones: [], bySession: {}, view: 'fio', yachchpMode: 'slash', blocks: SCHEDULE_BLOCKS.map((b) => ({ ...b })), peak: 'ЧАСЫ ПИК 17:00–20:00', rules: 'Выкладка товара, срок годности, дыры на полках, товар лицом к покупателю, чистота полок, ротация, ценники, ценникодержатели.' },
     plan: { items: [], done: {} },
     directory: {},
+    contactBook: {},
     materials: {
       folderId: '', folderUrl: '',
       groups: [

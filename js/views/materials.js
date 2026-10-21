@@ -118,7 +118,7 @@ async function parseParticipants(fileId, bytes) {
 // телефон из «Контактов», если в документе его нет
 function phoneFromContacts(name) {
   const [a, b] = low(name).split(/\s+/);
-  for (const rows of Object.values(S.directory || {})) {
+  for (const rows of [...Object.values(S.contactBook || {}), ...Object.values(S.directory || {})]) {
     for (const r of rows) if (!r.section && a && b && low(r.name).includes(a) && low(r.name).includes(b) && r.phone) return r.phone.split(/,\s*/).find((x) => /^8|^\+7/.test(x)) || r.phone;
   }
   for (const key of Object.keys(CONTACT_LISTS)) {

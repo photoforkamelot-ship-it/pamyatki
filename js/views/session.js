@@ -156,13 +156,9 @@ export function renderSessionCard() {
       h('button', { class: 'btn ghost sm', onClick: contactsDlg }, 'Справочник контактов'),
     ),
 
-    h('h3', { class: 'sub-h' }, 'Пожарная безопасность'),
-    h('p', { class: 'cap' }, 'Главный специалист'), contactChips('pbMain', 'pbMain', 'Главный специалист ПБ'),
-    h('p', { class: 'cap' }, 'Региональный специалист'), contactChips('pbRegional', 'pbRegional', 'Региональный специалист ПБ'),
-
-    h('h3', { class: 'sub-h' }, 'Служба безопасности'),
-    h('p', { class: 'cap' }, 'Начальник СБ'), contactChips('sbHead', 'sbHead', 'Начальник СБ'),
-    h('p', { class: 'cap' }, 'Региональный специалист'), contactChips('sbRegional', 'sbRegional', 'Региональный специалист СБ'),
+    h('h3', { class: 'sub-h' }, 'Контакты по отделам'),
+    h('p', { class: 'cap' }, 'ПБ, ГО и ЧС, охрана труда, СБ, ОПС, ЕГАИС, тренинг-менеджеры — свои в каждом регионе.'),
+    h('div', { class: 'row-actions' }, h('button', { class: 'btn ghost sm', onClick: () => sessionWizard('contacts') }, 'Открыть контакты ' + (s.region || 'региона'))),
 
     h('h3', { class: 'sub-h' }, 'Управляющий магазином'),
     h('div', { class: 'grid-2' },

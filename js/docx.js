@@ -1,5 +1,5 @@
 // Заполнение Word-шаблонов: метки вида {{ОСП}} или {{OSP}} заменяются значениями из вводных.
-const loadZip = () => (window.JSZip ? Promise.resolve(window.JSZip) : new Promise((res, rej) => {
+export const loadZip = () => (window.JSZip ? Promise.resolve(window.JSZip) : new Promise((res, rej) => {
   const s = document.createElement('script');
   s.src = new URL('../vendor/jszip.min.js', import.meta.url).href;
   s.onload = () => res(window.JSZip);

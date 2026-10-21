@@ -342,12 +342,20 @@ details.opt > summary { cursor: pointer; font-weight: 650; padding: 10px 0; colo
 .sheet.wide { max-width: 780px; }
 .modal-root.shown .sheet { transform: none; }
 .modal-root.leaving .sheet { transform: translateY(100%); }
+.modal-root.top { align-items: flex-start; padding-top: calc(env(safe-area-inset-top) + 6px); }
+.modal-root.top .sheet { border-radius: 0 0 28px 28px; transform: translateY(-100%); padding-bottom: 0; }
+.modal-root.top .sheet::after { top: auto; bottom: 7px; }
+.modal-root.top.shown .sheet { transform: none; }
+.modal-root.top.leaving .sheet { transform: translateY(-100%); }
+.modal-root.top .sheet-body { overscroll-behavior: contain; }
 @media (min-width: 700px) {
   .modal-root { align-items: center; padding: 20px; }
   .sheet { border-radius: 30px; max-height: 86vh; transform: translateY(24px) scale(0.98); opacity: 0; transition: transform .25s, opacity .2s; }
   .sheet::after { display: none; }
   .modal-root.shown .sheet { transform: none; opacity: 1; }
   .modal-root.leaving .sheet { transform: translateY(12px) scale(0.98); opacity: 0; }
+  .modal-root.top { align-items: center; }
+  .modal-root.top .sheet { border-radius: 30px; }
 }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 20px 14px 4px 20px; }
 .sheet-title { margin: 0; font-size: 20px; font-weight: 720; letter-spacing: -0.01em; }
@@ -583,3 +591,36 @@ input, textarea, [contenteditable] { caret-color: #ff3b30; }
 ::selection { background: #ffd60a; color: #000; }
 input::selection, textarea::selection { background: #ffd60a; color: #000; }
 .input:focus { box-shadow: inset 0 0 0 2px #ff9f0a !important; }
+
+/* ---------- карточка человека и подсказки ---------- */
+.pd-sugg { display: flex; flex-direction: column; margin-top: 6px; border-radius: 14px; overflow: hidden; background: var(--glass-strong); box-shadow: var(--spec); }
+.pd-sugg:empty { display: none; }
+.pd-sugg button { text-align: left; padding: 10px 12px; border: 0; background: transparent; color: inherit; font: inherit; border-bottom: 1px solid rgba(127,127,127,.18); cursor: pointer; }
+.pd-sugg button:last-child { border-bottom: 0; }
+.pd-sugg small { display: block; opacity: .65; font-size: 12px; margin-top: 2px; }
+.pd-phone { display: flex; gap: 8px; }
+.pd-phone .input { flex: 1; min-width: 0; }
+.pd-note { font-size: 12px; opacity: .7; margin: -4px 0 6px; }
+/* ---------- контакты ---------- */
+.cb-row { display: flex; align-items: center; gap: 8px; padding: 8px 4px; border-bottom: 1px solid rgba(127,127,127,.16); }
+.cb-row:last-child { border-bottom: 0; }
+.cb-row.off { opacity: .42; }
+.cb-row.off .cb-name { text-decoration: line-through; }
+.cb-main { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.cb-name-btn { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; }
+.cb-links { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 13px; margin-top: 2px; }
+.cb-links a { color: var(--accent); text-decoration: none; }
+.wz-cb > summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 4px 0; }
+.wz-cb > summary::-webkit-details-marker { display: none; }
+.wz-cb > summary b { font-size: 16px; }
+.wz-cb > summary span { font-size: 13px; opacity: .7; text-align: right; }
+.wz-cb[open] > summary span { display: none; }
+.cb-name { font-weight: 600; }
+.cb-meta { font-size: 12.5px; opacity: .7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cb-phone { font-size: 13px; white-space: nowrap; }
+.cb-add { display: block; width: 100%; text-align: left; padding: 9px 4px; border: 0; background: none; color: var(--accent); font: inherit; font-size: 14px; cursor: pointer; }
+.cb-banner { font-size: 13px; line-height: 1.4; padding: 10px 12px; border-radius: 14px; background: rgba(127,127,127,.12); margin-top: 8px; }
+.cb-banner button { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.cb-sec-sum { display: flex; justify-content: space-between; gap: 10px; padding: 9px 2px; border-bottom: 1px solid rgba(127,127,127,.16); background: none; border-left: 0; border-right: 0; border-top: 0; width: 100%; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cb-sec-sum span:last-child { opacity: .75; text-align: right; }
+.btn.danger-text { color: var(--red); }

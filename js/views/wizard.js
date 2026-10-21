@@ -4,6 +4,8 @@ import { h, icon, uid, plural } from '../util.js';
 import { S, update, emit, autoWarehouse } from '../store.js';
 import { openModal, chipSelect, formDlg } from '../ui.js';
 import { dative, genitive } from '../generators.js';
+import { book, absorbLegacy, isHidden } from '../contactbook.js';
+import { addPerson, editPerson } from './people.js';
 
 const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const POSITION = 'продавец-кассир';
@@ -17,7 +19,7 @@ export const STEPS = [
   { id: 'manager', title: 'Управляющий', check: (s) => [s.manager.fio, s.manager.phone] },
   { id: 'staff', title: 'Сотрудники', check: (s) => [(s.staff || []).filter((p) => p.fio)] },
   { id: 'hr', title: 'Кадровики', check: (s) => [s.hr] },
-  { id: 'safety', title: 'ПБ и СБ', check: (s) => [s.pbRegional, s.sbRegional], optional: true },
+  { id: 'contacts', title: 'Контакты по отделам', check: (s) => [s.region], optional: true },
   { id: 'money', title: 'Размен и инкассация', check: (s) => [s.money.perKkm, s.money.cashCount, s.money.rest, s.money.days], optional: true },
 ];
 export function stepStatus(step, s = S.session) {
@@ -147,21 +149,31 @@ function stepHr(s, redraw) {
   ];
 }
 
-function stepSafety() {
-  const chips = (listKey, key, label) => fieldBox(label, chipSelect({
-    options: S.lists[listKey] || [], value: S.session[key], keyOf: (o) => o.name, labelOf: (o) => o.name,
-    onChange: (v) => update((st) => { st.session[key] = v; }, { silent: true }),
-    onAdd: async () => {
-      const v = await formDlg(label, [{ key: 'name', label: 'Фамилия Имя' }, { key: 'phone', label: 'Телефон', type: 'tel', inputmode: 'tel' }]);
-      if (v && v.name) update((st) => { st.lists[listKey].push({ name: v.name, phone: v.phone, region: st.session.region || '' }); st.session[key] = v.name; });
-    },
-  }), 'контакты для директора');
-  return [
-    chips('pbMain', 'pbMain', 'Главный специалист ПБ'),
-    chips('pbRegional', 'pbRegional', 'Региональный специалист ПБ'),
-    chips('sbHead', 'sbHead', 'Начальник СБ'),
-    chips('sbRegional', 'sbRegional', 'Региональный специалист СБ'),
-  ];
+// Контакты региона по отделам: с первого объекта — из шаблона, дальше — как в последний раз в этом регионе
+let openSec = '';
+function stepContacts(s, redraw) {
+  if (!s.region) return [h('p', { class: 'cap' }, 'Сначала выберите регион на шаге 2 — контакты у каждого региона свои.')];
+  absorbLegacy(s.region);
+  const list = book(s.region);
+  const out = [h('p', { class: 'cap' }, `Контакты ${s.region}. Добавляйте людей в нужный отдел — начните вводить фамилию, и знакомые подставятся сами. Всё сохранится для следующих объектов в ${s.region}.`)];
+  // разделы свёрнуты: в заголовке — кто уже есть; раскрыть — править и добавлять
+  const secs = [];
+  list.forEach((r, i) => { if (r.section) secs.push({ r, i, people: [] }); else if (secs.length) secs[secs.length - 1].people.push(r); });
+  for (const sec of secs) {
+    const names = sec.people.map((p) => (p.name ? p.name.split(' ').slice(0, 2).join(' ') : !p.phone && !p.email ? '' : p.dept)).filter(Boolean);
+    const box = h('div', { class: 'cb-list' }, sec.people.map((r) => h('div', { class: 'cb-row' + (isHidden(r) ? ' off' : '') },
+      h('button', { class: 'cb-main', onClick: async () => { await editPerson(s.region, r); redraw(); } },
+        h('div', { class: 'cb-name' }, r.name || r.dept || '—'),
+        h('div', { class: 'cb-meta' }, [r.name ? r.dept : '', (r.phone || '').split(/,\s*/)[0]].filter(Boolean).join(' · ') || ' ')))));
+    const d = h('details', { class: 'card glass wz-cb' },
+      h('summary', null, h('b', null, sec.r.section), h('span', null, names.length ? names.slice(0, 2).join(', ') + (names.length > 2 ? ` +${names.length - 2}` : '') : 'добавить')),
+      box,
+      h('button', { class: 'cb-add', onClick: async () => { openSec = sec.r.section; await addPerson(s.region, sec.i); redraw(); } }, '+ добавить в «' + sec.r.section + '»'));
+    if (openSec === sec.r.section) d.open = true;
+    d.addEventListener('toggle', () => { if (d.open) openSec = sec.r.section; });
+    out.push(d);
+  }
+  return out;
 }
 
 function stepMoney(s) {
@@ -180,14 +192,14 @@ function stepMoney(s) {
   ];
 }
 
-const BUILD = { shop: stepShop, region: stepRegion, manager: stepManager, staff: stepStaff, hr: stepHr, safety: stepSafety, money: stepMoney };
+const BUILD = { shop: stepShop, region: stepRegion, manager: stepManager, staff: stepStaff, hr: stepHr, contacts: stepContacts, money: stepMoney };
 
 // ---------- окно ----------
 export function sessionWizard(startId) {
   let i = Math.max(0, STEPS.findIndex((x) => x.id === startId));
   const s = S.session;
   const box = h('div', { class: 'wizard wz' });
-  const m = openModal({ title: 'Вводные', body: box, wide: true, onClose: () => emit() });
+  const m = openModal({ title: 'Вводные', body: box, wide: true, top: true, onClose: () => emit() });
 
   function draw(after) {
     const step = STEPS[i];
