@@ -82,9 +82,11 @@ export function renderDocsTab(tab, root, { top } = {}) {
         setSel(tab, next);
       } }, printable.length && printable.every(({ doc }) => sel.has(doc.id)) ? 'Снять все' : 'Выбрать все'),
       h('button', { class: 'btn ghost sm', onClick: () => addFiles(tab, tab.sections[tab.sections.length - 1] || null) }, icon('upload'), 'Добавить'),
-      h('button', { class: 'btn primary sm grow', disabled: !selectedCount, onClick: () => printSelected(tab) }, icon('print'), `Печать${selectedCount ? ' · ' + selectedCount : ''}`),
     ),
   );
+  // плавающий принтер: список того, что уйдёт в печать, и предпросмотр общего файла
+  const fab = h('button', { class: 'print-fab' + (selectedCount ? '' : ' empty'), 'aria-label': `Печать: выбрано ${selectedCount}`, onClick: () => printSheet(tab) },
+    icon('print'), selectedCount ? h('span', { class: 'print-fab-n' }, String(selectedCount)) : null);
 
   const banner = stale.length && S.settings.showBadges
     ? h('button', { class: 'banner stale', onClick: () => runUpdateWizard(tab, stale) },
@@ -99,7 +101,7 @@ export function renderDocsTab(tab, root, { top } = {}) {
     if (name) update((s) => { s.tabs.find((t) => t.id === tab.id).sections.push({ id: uid(), title: name, items: [], printMode: '' }); });
   } }, icon('plus'), 'Раздел');
 
-  root.append(...[head, top, banner, ...sections, addSection].filter(Boolean));
+  root.append(...[head, top, banner, ...sections, addSection, fab].filter(Boolean));
 
   if (tab.settings.staleMode === 'ask' && stale.length && S.staleAsked[tab.id] !== sid()) {
     S.staleAsked[tab.id] = sid();
@@ -129,33 +131,27 @@ function renderRow(tab, sec, d, sel) {
   const content = hasContent(d);
   const duplex = sectionDuplex(tab, sec);
   const checkId = 'c' + d.id;
-  let meta = [];
+  // одна короткая строка: формат и что-то важное; служебное (даты, размеры) — только в меню
+  const meta = [];
   let needs = null;
-  if (!docApplies(d)) needs = null, meta.push('не для этого магазина · только ' + whenLabel(d));
-  else if (genExcel(d)) {
-    if (xlsxRows(d).length) meta.push(`ваш бланк Excel · строк на выбор: ${xlsxRows(d)[0]}–${xlsxRows(d).slice(-1)[0]}`);
-    else needs = 'Бланк Excel не загружен';
-  }
+  if (!docApplies(d)) meta.push('только ' + whenLabel(d));
+  else if (genExcel(d)) { if (xlsxRows(d).length) meta.push('Excel + PDF'); else needs = 'Бланк Excel не загружен'; }
   else if (d.drive && !activeFile(d)) needs = 'Скачать с Google Диска';
   else if (genTplCap(d)) {
-    if (d.file) meta.push((d.tplVariants && d.tplVariants[S.session.region] ? `шаблон для ${S.session.region}` : 'ваш Word-шаблон') + ' · меняются только ОСП, адрес, ФИО');
+    if (d.file) meta.push('Word + PDF' + (d.tplVariants && d.tplVariants[S.session.region] ? ' · ' + S.session.region : ''));
     else if (genWord(d)) needs = 'Загрузите Word-шаблон';
-    else meta.push('шаблон не загружен — печатается упрощённая версия');
+    else meta.push('упрощённо');
   }
-  else if (d.generator) meta.push('собирается из вводных');
+  else if (d.generator) meta.push('из вводных');
   else if (d.dependsOn && !dependValue(d.dependsOn)) needs = `Выберите во вводных: ${DEPENDS.find((x) => x.value === d.dependsOn).label.replace('От ', '').toLowerCase()}`;
   else if (!file) needs = d.dependsOn ? `Нет файла для «${dependValue(d.dependsOn)}»` : 'Нет файла';
   if (d.dependsOn && dependValue(d.dependsOn)) meta.unshift(dependValue(d.dependsOn));
-  if (file && isDocx(file)) {
-    meta.push('загружено ' + fmtDate(file.uploadedAt), 'Word' + (file.tags && file.tags.length ? ` · меток: ${file.tags.length}` : ''), fmtSize(file.size));
-  } else if (file && d.process && d.process.type === 'journal') {
-    meta.push(`обложка + ${d.process.sheets || 90} ${plural(d.process.sheets || 90, 'лист', 'листа', 'листов')} бланков (двусторонняя)`);
-  } else if (file) {
-    if (d.process && d.process.type === 'kic') { const k = kicFor(); meta.push(k ? `КИЦ: ${k.name || k.email} — ${d.process.mode === 'over' ? 'поверх последней строки' : 'под таблицей'}` : 'КИЦ города уже в таблице'); }
-    if (d.drive) meta.push('с Google Диска'); else meta.push('загружено ' + fmtDate(file.uploadedAt));
+  if (file && isDocx(file)) meta.push('Word');
+  else if (file && d.process && d.process.type === 'journal') meta.push(`журнал · ${d.process.sheets || 90} л.`);
+  else if (file) {
+    if (d.process && d.process.type === 'kic') { const k = kicFor(); if (k) meta.push('КИЦ ' + (k.name || k.email)); }
     const pad = duplex && file.padEven !== false && file.pages % 2;
-    meta.push(pagesWord(file.pages) + (pad ? ' (+1 пустая)' : ''));
-    meta.push(fmtSize(file.size));
+    meta.push(pagesWord(file.pages) + (pad ? ' +1' : ''));
   }
 
   const badges = [];
@@ -531,12 +527,49 @@ async function partsFor(tab, list) {
   return parts;
 }
 
-export async function printDocs(tab, list, { single = false, title } = {}) {
-  if (!list.length) return null;
-  const duplex = tab.settings.printMode === 'duplex';
-  // Word-документы (ваши шаблоны) выдаются как есть, в формате Word; несколько — архивом
-  const excels = list.filter(({ doc }) => genExcel(doc));
-  list = list.filter(({ doc }) => !genExcel(doc));
+// Сборка без отправки: Word-файлы (с их PDF) и общий PDF из остальных документов. Excel собирается при отправке (спрашивает строки).
+async function buildOutputs(tab, list, { single = false, title } = {}) {
+  const words = list.filter(({ doc }) => !genExcel(doc) && isWordDoc(doc));
+  const rest = list.filter(({ doc }) => !genExcel(doc) && !isWordDoc(doc));
+  const out = { words, rest, wordFiles: [], main: null };
+  if (words.length) {
+    try { out.wordFiles = await withBusy('Заполняю шаблоны Word…', async () => (await Promise.all(words.map(({ doc }) => wordOutputs(doc)))).flat()); }
+    catch (e) { toast('Word: ' + e.message, 'warn'); }
+  }
+  if (rest.length) {
+    out.main = await withBusy('Собираю файл…', async (step) => {
+      const parts = await partsFor(tab, rest);
+      const multiSection = new Set(rest.map((x) => x.sec.id)).size > 1;
+      if (!multiSection) parts.forEach((p) => (p.section = ''));
+      return buildPrint({
+        parts,
+        cover: !single && tab.settings.cover ? { title: title || tab.title, subtitle: [sessionLabel(S.session), fmtDate(new Date())].filter(Boolean).join(' · ') } : null,
+        duplexCover: tab.settings.printMode === 'duplex',
+        onProgress: (i, n, t) => step(`Документ ${i} из ${n}: ${t}`),
+      });
+    });
+  }
+  return out;
+}
+
+async function deliverOutputs(tab, out, { single = false, title } = {}) {
+  let any = false;
+  if (out.wordFiles.length) {
+    update(() => { out.words.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; }); });
+    await deliverFiles(out.wordFiles, `${title || tab.title} — Word — ${sessionLabel(S.session)}`);
+    any = true;
+  }
+  if (out.main) {
+    const name = single ? out.rest[0].doc.title : `${title || tab.title} — ${sessionLabel(S.session)} — ${fmtDate(new Date())}`;
+    update(() => { out.rest.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); if (!single) doc.skippedSession = null; }); });
+    await deliver(out.main, name, { duplex: out.rest.some(({ sec }) => sectionDuplex(tab, sec)) });
+    any = true;
+  }
+  return any;
+}
+
+async function printExcels(excels) {
+  let any = false;
   for (const { doc } of excels) {
     try {
       const out = await excelOutputs(doc);
@@ -545,49 +578,32 @@ export async function printDocs(tab, list, { single = false, title } = {}) {
         const also = await excelPdf(f.bytes, f.name, doc.generator === 'tabel' ? { lastCol: 'AP' } : {});
         await deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { excel: true, also });
       }
-      if (out.length) update(() => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; });
+      if (out.length) { any = true; update(() => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; }); }
     } catch (e) { toast('Excel: ' + e.message, 'warn'); }
   }
-  const words = list.filter(({ doc }) => isWordDoc(doc));
-  list = list.filter(({ doc }) => !isWordDoc(doc));
-  if (!list.length && !words.length) return excels.length ? true : null;
-  if (words.length) {
-    try {
-      const files = await withBusy('Заполняю шаблоны Word…', async () => (await Promise.all(words.map(({ doc }) => wordOutputs(doc)))).flat());
-      update(() => { words.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; }); });
-      await deliverFiles(files, `${title || tab.title} — Word — ${sessionLabel(S.session)}`);
-    } catch (e) { toast('Word: ' + e.message, 'warn'); }
-  }
-  if (!list.length) return words.length ? true : null;
+  return any;
+}
+
+export async function printDocs(tab, list, opts = {}) {
+  if (!list.length) return null;
+  const xl = await printExcels(list.filter(({ doc }) => genExcel(doc)));
   try {
-    const bytes = await withBusy('Собираю файл…', async (step) => {
-      const parts = await partsFor(tab, list);
-      const multiSection = new Set(list.map((x) => x.sec.id)).size > 1;
-      if (!multiSection) parts.forEach((p) => (p.section = ''));
-      return buildPrint({
-        parts,
-        cover: !single && tab.settings.cover ? { title: title || tab.title, subtitle: [sessionLabel(S.session), fmtDate(new Date())].filter(Boolean).join(' · ') } : null,
-        duplexCover: duplex,
-        onProgress: (i, n, t) => step(`Документ ${i} из ${n}: ${t}`),
-      });
-    });
-    const name = single ? list[0].doc.title : `${title || tab.title} — ${sessionLabel(S.session)} — ${fmtDate(new Date())}`;
-    update(() => { list.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); if (!single) doc.skippedSession = null; }); });
-    await deliver(bytes, name, { duplex: list.some(({ sec }) => sectionDuplex(tab, sec)) });
-    return bytes;
+    const out = opts.built || await buildOutputs(tab, list, opts);
+    const ok = await deliverOutputs(tab, out, opts);
+    return ok || xl ? (out.main || true) : null;
   } catch (e) {
     console.error(e);
     toast('Не удалось собрать файл: ' + e.message, 'warn');
-    return null;
+    return xl || null;
   }
 }
 
-async function printSelected(tab) {
+async function printSelected(tab, built) {
   const sel = getSel(tab);
   const all = tabDocs(tab).filter(({ doc }) => hasContent(doc));
   const chosen = all.filter(({ doc }) => sel.has(doc.id));
   const skipped = all.filter(({ doc }) => !sel.has(doc.id) && !doc.generator).map(({ doc }) => doc);
-  const res = await printDocs(tab, chosen);
+  const res = await printDocs(tab, chosen, { built });
   if (!res) return;
   update(() => { skipped.forEach((d) => { if (!isStale(d)) d.skippedSession = sid(); }); });
   if (skipped.length && S.settings.showReminders) {
@@ -598,6 +614,75 @@ async function printSelected(tab) {
     );
     if (go) runUpdateWizard(tab, skipped);
   }
+}
+
+// ---------- принтер: что уйдёт в печать ----------
+const fmtOf = (d) => (genExcel(d) ? 'Excel + PDF' : isWordDoc(d) ? (d.pdfBase || d.wpdfBase ? 'Word + PDF' : 'Word') : d.generator ? 'PDF' : activeFile(d) ? pagesWord(activeFile(d).pages) : 'PDF');
+function printSheet(tab) {
+  const items = tabDocs(tab).filter(({ doc }) => hasContent(doc));
+  const box = h('div', { class: 'ps-list' });
+  let m = null;
+  const draw = () => {
+    const sel = getSel(tab);
+    const n = items.filter(({ doc }) => sel.has(doc.id)).length;
+    box.innerHTML = '';
+    let lastSec = null;
+    for (const { doc, sec } of items) {
+      if (sec !== lastSec) { box.append(h('div', { class: 'ps-sec' }, sec.title)); lastSec = sec; }
+      const id = 'ps' + doc.id;
+      const cb = h('input', { type: 'checkbox', id, class: 'check' });
+      cb.checked = sel.has(doc.id);
+      cb.addEventListener('change', () => { const next = getSel(tab); cb.checked ? next.add(doc.id) : next.delete(doc.id); setSel(tab, next); draw(); });
+      box.append(h('label', { class: 'ps-row' + (cb.checked ? '' : ' off'), for: id }, cb, h('span', { class: 'check-box', 'aria-hidden': 'true' }),
+        h('span', { class: 'ps-t' }, doc.title), h('span', { class: 'ps-f' }, fmtOf(doc))));
+    }
+    if (m) {
+      m.setTitle(`В печать: ${n} из ${items.length}`);
+      m.setActions([
+        { label: n === items.length ? 'Снять все' : 'Выбрать все', kind: 'ghost', keepOpen: true, onClick: () => { const next = new Set(); if (n !== items.length) items.forEach(({ doc }) => next.add(doc.id)); setSel(tab, next); draw(); } },
+        { label: 'Предпросмотр', kind: 'ghost', disabled: !n, keepOpen: true, onClick: () => { m.close(); previewAll(tab); } },
+        { label: 'Печать', kind: 'primary', disabled: !n, onClick: () => printSelected(tab) },
+      ]);
+    }
+  };
+  m = openModal({ title: 'В печать', body: box, wide: true });
+  draw();
+}
+
+// Предпросмотр: все листы, которые придут файлами (общий PDF + PDF к Word); снять документ — нажать ✕ у него
+async function previewAll(tab) {
+  const sel = getSel(tab);
+  const chosen = tabDocs(tab).filter(({ doc }) => hasContent(doc) && sel.has(doc.id));
+  const body = h('div', { class: 'pv' }, h('div', { class: 'spinner' }));
+  const excels = chosen.filter(({ doc }) => genExcel(doc));
+  let built = null;
+  const m = openModal({ title: 'Предпросмотр', body, wide: true, actions: [
+    { label: 'Назад', kind: 'ghost', onClick: () => setTimeout(() => printSheet(tab), 50) },
+    { label: 'Отправить', kind: 'primary', onClick: () => printSelected(tab, built) },
+  ] });
+  try {
+    built = await buildOutputs(tab, chosen);
+    body.innerHTML = '';
+    const files = [];
+    if (built.main) files.push({ name: `${tab.title} — общий PDF`, bytes: built.main, docs: built.rest });
+    for (const f of built.wordFiles.filter((x) => x.pdf)) files.push({ name: f.name + ' (PDF)', bytes: f.bytes });
+    const wordOnly = built.wordFiles.filter((x) => !x.pdf);
+    let total = 0;
+    for (const f of files) {
+      const grid = h('div', { class: 'thumbs pv-grid' }, h('div', { class: 'spinner sm' }));
+      const head = h('div', { class: 'pv-head' }, h('b', null, f.name), h('span', null, '…'));
+      body.append(head, grid);
+      const imgs = await renderThumbs(f.bytes, { count: 120, width: 104 });
+      total += imgs.length;
+      head.lastChild.textContent = imgs.length >= 120 ? 'первые 120 страниц' : `${imgs.length} ${plural(imgs.length, 'страница', 'страницы', 'страниц')}`;
+      grid.innerHTML = '';
+      imgs.forEach((c, i) => grid.append(h('figure', { class: 'pv-page' }, c, h('figcaption', null, String(i + 1)))));
+    }
+    if (wordOnly.length) body.append(h('p', { class: 'cap' }, `Word-файлы (${wordOnly.length}) придут отдельно — рядом их PDF, они показаны выше.`));
+    if (excels.length) body.append(h('p', { class: 'cap' }, `Excel (${excels.map(({ doc }) => doc.title).join(', ')}) — при отправке спросит число строк, PDF придёт вместе с ним.`));
+    body.append(h('div', { class: 'pv-drop' }, h('span', { class: 'cap' }, 'Убрать из печати:'), ...chosen.map(({ doc }) => h('button', { class: 'chip', onClick: () => { const next = getSel(tab); next.delete(doc.id); setSel(tab, next); m.close(); setTimeout(() => previewAll(tab), 60); } }, '✕ ' + doc.title))));
+    m.setTitle(`Предпросмотр · ${total} ${plural(total, 'страница', 'страницы', 'страниц')}`);
+  } catch (e) { console.error(e); body.innerHTML = ''; body.append(h('p', { class: 'note warn' }, 'Не удалось собрать: ' + e.message)); }
 }
 
 // ---------- просроченные ----------

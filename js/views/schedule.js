@@ -94,40 +94,94 @@ export function renderSchedule(tab, root) {
       ),
     ),
 
-    // Распределение
-    h('section', { class: 'card glass' },
-      h('div', { class: 'card-head' }, h('h2', null, 'Распределение')),
-      zs.length ? h('div', { class: 'status-line ' + (free.length ? 'warn' : 'ok') },
-        free.length ? `Распределено ${zs.length - free.length} из ${zs.length}. Без ответственных: ${free.length}` : `Все ${zs.length} зон распределены`) : h('p', { class: 'empty' }, 'Сначала добавьте зоны ниже или загрузите стартовый пакет в настройках.'),
-      free.length && zs.length ? h('details', { class: 'opt' }, h('summary', null, 'Какие зоны без ответственных'), h('div', { class: 'chips muted' }, free.map((z) => h('span', { class: 'chip static' }, z.name)))) : null,
-      unassignedStaff.length ? h('p', { class: 'note warn' }, `Без функционала: ${unassignedStaff.map((p) => shortFio(p.fio)).join(', ')}. Укажите его во вводных на вкладке «Памятки».`) : null,
-      !S.session.staff.length ? h('p', { class: 'note' }, 'Введите сотрудников во вводных на вкладке «Памятки»: ФИО, должность, функционал и смену. Пара одного функционала в двух сменах отвечает за одни и те же зоны.') : null,
-      ...S.lists.roles.map((role) => roleBlock(role)),
-      directorBlock(),
-      zs.length ? h('div', { class: 'row-actions' }, h('button', { class: 'btn ghost sm', onClick: yachOwnersDlg }, 'Общие зоны в ЯЧЧП: кто в какое время')) : null,
-    ),
-
+    // Распределение кистью: выбрали функционал внизу — нажимаете зоны
+    brushCard(),
     summaryCard(),
+  );
+}
 
-    // Зоны
-    h('section', { class: 'card glass' },
-      h('div', { class: 'card-head' }, h('h2', null, 'Зоны магазина', h('span', { class: 'pill' }, String(zs.length))),
-        h('div', { class: 'card-actions' },
-          h('button', { class: 'btn ghost sm', onClick: addZones }, icon('plus'), 'Списком'),
-          h('button', { class: 'icon-btn', 'aria-label': 'Настройки времени ЯЧЧП', onClick: blocksDlg }, icon('gear')),
-          h('button', { class: 'icon-btn', 'aria-label': 'Шаблоны Excel', onClick: () => menu('Шаблоны Excel', [
-            { label: (tpls().resp ? 'Заменить' : 'Загрузить') + ' шаблон «Зоны ответственности»', onClick: () => uploadScheduleTpl('resp') },
-            { label: (tpls().yach ? 'Заменить' : 'Загрузить') + ' шаблон ЯЧЧП', onClick: () => uploadScheduleTpl('yach') },
-          ]) }, icon('file')),
-        )),
-      h('p', { class: 'cap' }, 'Одно название зоны печатается в обоих документах. Нажмите на зону, чтобы переименовать её, указать время в ЯЧЧП или сделать общей.'),
-      ...groups.map((g) => h('div', { class: 'zone-group' },
-        h('p', { class: 'cap strong' }, g),
-        h('div', { class: 'chips' }, zs.filter((z) => (z.group || 'Без группы') === g).map((z) => h('button', { class: 'chip zchip' + (z.task ? ' task' : '') + (z.control ? ' ctrl' : '') + (ownersOf(z.id).length > 1 ? ' common' : ''), style: zoneStyle(z), onClick: () => editZone(z) },
-          z.name, z.common ? h('small', { class: 'tag' }, 'всем') : z.shared ? h('small', { class: 'tag' }, 'общая') : null))),
-      )),
+// ---------- распределение кистью ----------
+let brush = null;      // функционал | 'dir' | 'edit'
+const openGroups = new Set();
+function brushCard() {
+  const zs = zones();
+  const roles = S.lists.roles;
+  if (!brush || (brush !== 'dir' && brush !== 'edit' && !roles.includes(brush))) brush = roles[0] || 'edit';
+  const a = sched().assign;
+  const assigned = new Set(roles.flatMap((r) => a[r] || []));
+  const free = zs.filter((z) => !assigned.has(z.id));
+  const unassignedStaff = S.session.staff.filter((p) => p.fio && !p.role);
+  const groups = [...new Set(zs.map((z) => z.group || 'Без группы'))];
+  const perRole = roles.map((r) => (a[r] || []).filter((id) => zoneById(id) && ownersOf(id).length === 1).length);
+
+  const tap = (z) => {
+    if (brush === 'edit') return editZone(z);
+    update(() => {
+      if (brush === 'dir') { const d = sched().director; const i = d.indexOf(z.id); i >= 0 ? d.splice(i, 1) : d.push(z.id); return; }
+      const mine = a[brush] = a[brush] || [];
+      const i = mine.indexOf(z.id);
+      if (i >= 0) { mine.splice(i, 1); return; }
+      // обычная зона — у одного функционала: переносим; общая — добавляем к остальным
+      if (!isShared(z)) for (const r of roles) if (r !== brush && a[r]) a[r] = a[r].filter((id) => id !== z.id);
+      mine.push(z.id);
+    });
+  };
+  const chip = (z) => {
+    const own = ownersOf(z.id);
+    const isDir = sched().director.includes(z.id);
+    const hit = brush === 'dir' ? isDir : own.includes(brush);
+    return h('button', { class: 'chip zchip brush-chip' + (own.length > 1 ? ' common' : '') + (hit ? ' hit' : '') + (!own.length ? ' free' : '') + (z.control ? ' ctrl' : ''), style: zoneStyle(z), onClick: () => tap(z) },
+      z.name, isDir ? h('small', { class: 'tag' }, 'дир.') : null, z.common ? h('small', { class: 'tag' }, 'всем') : z.shared ? h('small', { class: 'tag' }, 'общая') : null);
+  };
+  const pct = (n) => (zs.length ? (100 * n) / zs.length : 0);
+
+  return h('section', { class: 'card glass brush-card' },
+    h('div', { class: 'card-head' }, h('h2', null, 'Распределение зон'),
+      h('div', { class: 'card-actions' },
+        h('button', { class: 'icon-btn', 'aria-label': 'Ещё', onClick: () => menu('Зоны', [
+          { label: 'Как в прошлый раз', onClick: copyLast },
+          { label: 'Очистить распределение', onClick: async () => { if (await confirmDlg('Очистить?', 'Все зоны станут без ответственных (общие «всем» останутся).', 'Очистить', 'Отмена', true)) update(() => { const common = zs.filter((z) => z.common).map((z) => z.id); for (const r of roles) a[r] = common.slice(); sched().director = []; }); } },
+          { label: 'Добавить зоны списком', onClick: addZones },
+          { label: 'Кто в общих зонах ЯЧЧП', onClick: yachOwnersDlg },
+          { label: 'Время блоков ЯЧЧП', onClick: blocksDlg },
+          { label: (tpls().resp ? 'Заменить' : 'Загрузить') + ' шаблон «Зоны ответственности»', onClick: () => uploadScheduleTpl('resp') },
+          { label: (tpls().yach ? 'Заменить' : 'Загрузить') + ' шаблон ЯЧЧП', onClick: () => uploadScheduleTpl('yach') },
+        ]) }, icon('more')))),
+    zs.length ? h('div', { class: 'brush-progress' },
+      h('div', { class: 'bp-bar' }, roles.map((r, i) => h('span', { style: `width:${pct(perRole[i])}%;background:${roleColor(r)}` })), h('span', { style: `width:${pct(zs.length - free.length - perRole.reduce((x, y) => x + y, 0))}%;background:var(--muted, #8b98a5)` })),
+      h('span', { class: free.length ? 'bp-t warn' : 'bp-t ok' }, free.length ? `${zs.length - free.length} из ${zs.length} · без роли ${free.length}` : `все ${zs.length} зон`))
+      : h('p', { class: 'empty' }, 'Зон пока нет: загрузите стартовый пакет в настройках или добавьте списком.'),
+    unassignedStaff.length ? h('p', { class: 'note warn' }, `Без функционала: ${unassignedStaff.map((p) => shortFio(p.fio)).join(', ')} — укажите во вводных.`) : null,
+    ...groups.map((g) => {
+      const list = zs.filter((z) => (z.group || 'Без группы') === g);
+      const done = list.filter((z) => ownersOf(z.id).length).length;
+      const d = h('details', { class: 'zone-group brush-group' }, h('summary', null, h('b', null, g), h('span', { class: done < list.length ? 'warn' : '' }, `${done} из ${list.length}`)),
+        h('div', { class: 'chips' }, list.map(chip)));
+      if (openGroups.has(g) || (!openGroups.size && done < list.length && !groups.some((x) => openGroups.has(x)))) d.open = true;
+      d.addEventListener('toggle', () => { d.open ? openGroups.add(g) : openGroups.delete(g); });
+      return d;
+    }),
+    h('p', { class: 'cap' }, brush === 'edit' ? 'Режим правки: нажмите на зону, чтобы переименовать, сделать общей или задать время в ЯЧЧП.' : 'Нажмите зону — она перейдёт к выбранному функционалу; ещё раз — снять. Общие зоны можно дать нескольким.'),
+    h('div', { class: 'brush-bar' },
+      ...roles.map((r, i) => h('button', { class: 'brush-btn' + (brush === r ? ' on' : ''), style: rc(r), onClick: () => { brush = r; update(() => {}); } },
+        h('span', null, r), h('small', null, [staffOf(r).map((p) => surname(p.fio)).join(', ') || 'нет людей', perRole[i] ? `${perRole[i]} зон` : ''].filter(Boolean).join(' · ')))),
+      h('button', { class: 'brush-btn dir' + (brush === 'dir' ? ' on' : ''), onClick: () => { brush = 'dir'; update(() => {}); } }, h('span', null, 'Директор'), h('small', null, sched().director.length ? `${sched().director.length} зон` : 'в скобках')),
+      h('button', { class: 'brush-btn edit' + (brush === 'edit' ? ' on' : ''), onClick: () => { brush = 'edit'; update(() => {}); } }, icon('pencil'), h('small', null, 'править')),
     ),
   );
+}
+
+function copyLast() {
+  const cur = S.session.id;
+  const prev = Object.entries(S.schedule.bySession).filter(([k, b]) => k !== cur && b && b.assign && Object.values(b.assign).some((x) => x && x.length)).pop();
+  if (!prev) { toast('Нет прошлого распределения'); return; }
+  const ids = new Set(zones().map((z) => z.id));
+  update(() => {
+    const b = sched();
+    for (const r of S.lists.roles) b.assign[r] = (prev[1].assign[r] || []).filter((id) => ids.has(id));
+    b.director = (prev[1].director || []).filter((id) => ids.has(id));
+  });
+  toast('Распределение как в прошлый раз');
 }
 
 function roleBlock(role) {
