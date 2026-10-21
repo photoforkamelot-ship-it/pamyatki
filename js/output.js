@@ -69,6 +69,8 @@ export async function deliver(bytes, filename, { duplex = false, word = false, e
   const mainKind = zip ? 'zip' : excel ? 'xlsx' : word ? 'docx' : 'pdf';
   let files = [{ bytes, kind: mainKind, name: clean(filename) + KIND[mainKind][0], hint: '' },
     ...also.map((a) => { const k = a.kind || 'pdf'; return { bytes: a.bytes, kind: k, name: clean(a.filename) + KIND[k][0], hint: a.hint || '' }; })];
+  // «Только PDF»: Word и Excel не отправляем, если к ним есть PDF
+  if (S.settings.pdfOnly && files.some((f) => f.kind === 'pdf')) files = files.filter((f) => f.kind === 'pdf');
   if (!noPreview && S.settings.previewBeforeSend !== false) {
     files = await previewFiles(files);
     if (!files || !files.length) return;

@@ -131,6 +131,8 @@ export function renderSettings(root, close) {
 
     h('section', { class: 'card glass' },
       h('div', { class: 'card-head' }, h('h2', null, 'Отображение')),
+      toggle('Только PDF', !!S.settings.pdfOnly, (v) => update(() => { S.settings.pdfOnly = v; }), 'Не присылать файлы Word и Excel — только PDF для печати. Быстрее собирается и отправляется'),
+      toggle('Предпросмотр перед отправкой', S.settings.previewBeforeSend !== false, (v) => update(() => { S.settings.previewBeforeSend = v; }), 'Показать все листы и дать убрать лишний файл'),
       toggle('Плашки «снят с печати» и «просрочен»', S.settings.showBadges, (v) => update(() => { S.settings.showBadges = v; })),
       toggle('Напоминания об обновлении после печати', S.settings.showReminders, (v) => update(() => { S.settings.showReminders = v; })),
       toggle('Карандаши у названий', S.settings.showPencil, (v) => update(() => { S.settings.showPencil = v; }), 'Быстрое переименование'),

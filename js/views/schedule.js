@@ -50,6 +50,7 @@ const staffOf = (role) => S.session.staff.filter((p) => p.role === role && p.fio
 const ownersOf = (zid) => S.lists.roles.filter((r) => (sched().assign[r] || []).includes(zid));
 const isShared = (z) => !!(z.shared || z.common);
 const dirName = () => (S.session.manager.fio ? surname(S.session.manager.fio) : 'директор');
+const dirOn = (z) => sched().director.includes(z.id);
 const withDir = (z) => z.name + (sched().director.includes(z.id) ? ` (${dirName()})` : '');
 
 function shiftPerson(role, shift) {
@@ -371,7 +372,7 @@ function yachPreview() {
       h('div', { class: 'yach-rows' }, b.rows.map((r) => {
         const style = r.role >= 0 ? rc(roles[r.role]) : '';
         return h('div', { class: 'yach-row' + (r.common ? ' common-tag' : '') + (r.free ? ' free' : ''), style },
-          h('span', { class: 'yz' }, r.zone), h('span', { class: 'yp' }, [...new Set([r.s1, r.s2].filter(Boolean))].join(' / ') || '—'));
+          h('span', { class: 'yz' }, r.zone), h('span', { class: 'yp' }, ([...new Set([r.s1, r.s2].filter(Boolean))].join(' / ') || '—') + (r.dir ? ' · УМ помогает' : '')));
       })))));
 }
 
@@ -411,13 +412,15 @@ function yachRows() {
       let owners = roles.filter((r) => (sched().assign[r] || []).includes(z.id));
       const pick = (sched().yachOwner[z.id] || {})[b.id];
       if (pick && owners.includes(pick)) owners = [pick];
-      const nm = (r, sh) => { const p = shiftPerson(r, sh); return p ? surname(p.fio) : ''; };
+      // фамилия и инициалы без точек: «Малых АИ»
+      const nm = (r, sh) => { const p = shiftPerson(r, sh); if (!p) return ''; const [f, i, o] = p.fio.trim().split(/\s+/); return [f, ((i || '')[0] || '') + ((o || '')[0] || '')].filter(Boolean).join(' '); };
       if (owners.length > 1) {
         // общая зона — отдельной строкой у каждого функционала, с пометкой
-        for (const r of owners) rows.push({ s1: nm(r, 1), s2: nm(r, 2), zone: withDir(z) + ' (общая зона)', control: z.control, free: false, role: roles.indexOf(r), common: true });
+        // директор не в скобках к зоне, а «/УМ помогает» к фамилии во второй колонке
+        for (const r of owners) rows.push({ s1: nm(r, 1), s2: nm(r, 2), zone: z.name + ' (общая зона)', dir: dirOn(z), control: z.control, free: false, role: roles.indexOf(r), common: true });
         continue;
       }
-      rows.push({ s1: owners.length ? nm(owners[0], 1) : '', s2: owners.length ? nm(owners[0], 2) : '', zone: withDir(z), control: z.control, free: !owners.length, role: owners.length === 1 ? roles.indexOf(owners[0]) : -1 });
+      rows.push({ s1: owners.length ? nm(owners[0], 1) : '', s2: owners.length ? nm(owners[0], 2) : '', zone: z.name, dir: dirOn(z), control: z.control, free: !owners.length, role: owners.length === 1 ? roles.indexOf(owners[0]) : -1 });
     }
     return { label: b.label, rows };
   });
@@ -434,7 +437,7 @@ function yachBlocks() {
       const r = b.rows[i];
       if (!r) return ['', '', ''];
       const fill = r.free ? '#fff2a8' : r.control ? GREY : null;
-      return [{ t: r.s1, size: 6.8, fill }, { t: r.s2, size: 6.8, fill }, { t: r.zone, size: 6.8, fill }];
+      return [{ t: r.s1, size: 6.8, fill }, { t: (r.s2 || '') + (r.dir ? (r.s2 ? '/' : '') + 'УМ помогает' : ''), size: 6.8, fill }, { t: r.zone, size: 6.8, fill }];
     }));
   }
   return [
@@ -461,7 +464,7 @@ function respData() {
   };
 }
 
-async function makeXlsx(which) {
+export async function makeXlsx(which) {
   const out = [];
   if (which !== 'yach' && tpls().resp) out.push({ name: 'Зоны ответственности', bytes: await fillResponsibility(await getBytes(tpls().resp), respData()) });
   if (which !== 'resp' && tpls().yach) {
@@ -520,7 +523,7 @@ const printBoth = () => printWhich('both', 'Сервисный график');
 async function exportCsv() {
   const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
   const lines = [['Время', '1 смена Фамилия', '2 смена Фамилия', 'Отдел']];
-  for (const b of yachRows()) for (const r of b.rows) lines.push([b.label, r.s1, r.s2, r.zone]);
+  for (const b of yachRows()) for (const r of b.rows) lines.push([b.label, r.s1, (r.s2 || '') + (r.dir ? (r.s2 ? '/' : '') + 'УМ помогает' : ''), r.zone]);
   const csv = '﻿' + lines.map((r) => r.map(esc).join(';')).join('\r\n');
   const bytes = new TextEncoder().encode(csv);
   const name = `ЯЧЧП — ${sessionLabel(S.session)}.csv`;

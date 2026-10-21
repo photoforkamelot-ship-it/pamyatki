@@ -9,7 +9,7 @@ import { GENERATORS, baseValues, templateRuns } from '../generators.js';
 import { fillDocx, isDocx } from '../docx.js';
 import { renderBlocks } from '../pages.js';
 import { tabSettingsDlg } from './settings.js';
-import { kicOverlay, buildJournal } from '../process.js';
+import { kicOverlay, buildJournal, regionPages, detectMarks } from '../process.js';
 import { setCells } from '../xlsx.js';
 import { fetchDriveDoc } from './materials.js';
 
@@ -191,6 +191,7 @@ function docMenu(tab, sec, d) {
   menu(d.title, [
     !d.generator ? { label: file ? 'Обновить файл' : 'Загрузить файл', onClick: () => (file ? runUpdateWizard(tab, [d]) : uploadInto(tab, d)) } : null,
     d.drive ? { label: 'Проверить обновление на Google Диске', onClick: () => fetchDriveDoc(d, { force: true }).catch((e) => toast(e.message, 'warn')) } : null,
+    file && !isDocx(file) && !d.generator ? { label: 'Страницы по регионам' + (d.pageMarks ? ` (${Object.keys(d.pageMarks).length})` : '') + '…', onClick: () => marksDlg(d) } : null,
     pr.type === 'kic' ? { label: 'КИЦ для этого магазина…', onClick: () => kicDlg() } : null,
     pr.type === 'kic' ? { label: 'Строка КИЦ: ' + (pr.mode === 'over' ? 'поверх последней строки' : 'под таблицей'), onClick: async () => {
       const v = await choiceDlg('Куда печатать строку КИЦ', 'На странице «Заказ размена» под таблицей КИЦ.', [
@@ -350,6 +351,7 @@ async function uploadInto(tab, d) {
     d.skippedSession = null;
     const set = new Set(s.selection[tab.id] || []); set.add(d.id); s.selection[tab.id] = [...set];
   });
+  refreshMarks(d, meta);
   toast('Файл загружен');
 }
 
@@ -374,7 +376,10 @@ async function wordOutputs(doc) {
   const bytes = await getBytes(file);
   const runs = tpl ? templateRuns(doc.generator, S.session) : [{ suffix: '', values: baseValues(S.session) }];
   const out = [];
-  for (const r of runs) {
+  // «Только PDF»: Word не заполняем, если PDF собирается из своей основы — так быстрее
+  const lay0 = doc.pdf4;
+  const pdfRoute = (doc.pdfBase && (!lay0 || !lay0.region || lay0.region === S.session.region)) || (doc.wpdf && doc.wpdfBase && tpl);
+  if (!(S.settings.pdfOnly && pdfRoute)) for (const r of runs) {
     const f = await fillDocx(bytes, r.values, { fit: (GENERATORS[doc.generator] || {}).fit });
     out.push({ name: [doc.title, r.suffix].filter(Boolean).join(' '), bytes: f.bytes, missing: f.missing });
   }
@@ -454,6 +459,8 @@ async function docBytes(d) {
     if (k) bytes = await kicOverlay(bytes, { page: pr.page || 1, mode: pr.mode || 'below', name: k.name, email: k.email });
   }
   if (pr && pr.type === 'journal') bytes = await buildJournal(d.cover ? await getBytes(d.cover) : null, bytes, pr.sheets || 90);
+  // страницы с метками «[УФО]» и т.п. — только для своего региона, метки закрываются белым
+  if (d.pageMarks) bytes = await regionPages(bytes, d.pageMarks, S.session.region);
   return bytes;
 }
 
@@ -616,8 +623,44 @@ async function printSelected(tab, built) {
   }
 }
 
+// ---------- страницы по регионам ----------
+// новый файл: ищем метки «[УФО]» в тексте; нашли — ставим, нет — снимаем старые (они были для прежнего файла)
+async function refreshMarks(d, meta) {
+  if (!meta || isDocx(meta)) return;
+  try {
+    const marks = await detectMarks(await getBytes(meta));
+    update(() => { d.pageMarks = marks || null; }, { silent: true });
+    if (marks) toast(`Найдены страницы по регионам: ${Object.keys(marks).length}`);
+  } catch (e) { console.warn('метки регионов', e); }
+}
+
+// Ручная разметка: у каждой страницы — для каких регионов она (пусто — для всех)
+async function marksDlg(d) {
+  const regions = [...new Set([...(S.lists.regions || []), 'ЦФО', 'СФО', 'УФО'])];
+  const marks = JSON.parse(JSON.stringify(d.pageMarks || {}));
+  const grid = h('div', { class: 'thumbs pv-grid marks-grid' }, h('div', { class: 'spinner' }));
+  const m = openModal({ title: 'Страницы по регионам', wide: true, body: h('div', null,
+    h('p', { class: 'cap' }, `Отметьте, для каких регионов страница. Без отметки — печатается всем. Сейчас регион: ${S.session.region || 'не выбран'}.`), grid),
+    actions: [{ label: 'Отмена', kind: 'ghost' }, { label: 'Сохранить', kind: 'primary', onClick: () => update(() => {
+      for (const k of Object.keys(marks)) if (!marks[k].r || !marks[k].r.length) delete marks[k];
+      d.pageMarks = Object.keys(marks).length ? marks : null;
+    }) }] });
+  const imgs = await renderThumbs(await getBytes(activeFile(d)), { count: 400, width: 104 });
+  grid.innerHTML = '';
+  imgs.forEach((c, i) => {
+    const k = String(i + 1);
+    const chips = h('div', { class: 'mk-chips' });
+    const draw = () => { chips.replaceChildren(...regions.map((r) => h('button', { class: 'mk' + ((marks[k] && marks[k].r || []).includes(r) ? ' on' : ''), onClick: () => {
+      const cur = marks[k] = marks[k] || { r: [] }; cur.r = cur.r.includes(r) ? cur.r.filter((x) => x !== r) : [...cur.r, r]; draw();
+    } }, r))); };
+    draw();
+    grid.append(h('figure', { class: 'pv-page' }, c, h('figcaption', null, k), chips));
+  });
+  return m.promise;
+}
+
 // ---------- принтер: что уйдёт в печать ----------
-const fmtOf = (d) => (genExcel(d) ? 'Excel + PDF' : isWordDoc(d) ? (d.pdfBase || d.wpdfBase ? 'Word + PDF' : 'Word') : d.generator ? 'PDF' : activeFile(d) ? pagesWord(activeFile(d).pages) : 'PDF');
+const fmtOf = (d) => (S.settings.pdfOnly && (genExcel(d) || d.pdfBase || d.wpdfBase) ? 'PDF' : genExcel(d) ? 'Excel + PDF' : isWordDoc(d) ? (d.pdfBase || d.wpdfBase ? 'Word + PDF' : 'Word') : d.generator ? 'PDF' : activeFile(d) ? pagesWord(activeFile(d).pages) : 'PDF');
 function printSheet(tab) {
   const items = tabDocs(tab).filter(({ doc }) => hasContent(doc));
   const box = h('div', { class: 'ps-list' });
@@ -806,6 +849,7 @@ function updateOne(tab, d, idx, total) {
           d.skippedSession = null;
           const set = new Set(s.selection[tab.id] || []); set.add(d.id); s.selection[tab.id] = [...set];
         });
+        refreshMarks(d, meta);
         if (prev) dropFile(prev);
         toast(meta.size < meta.origSize * 0.95 ? `Заменено. Сжато ${fmtSize(meta.origSize)} → ${fmtSize(meta.size)}` : 'Заменено');
         m.close('done');

@@ -87,7 +87,7 @@ async function readBook(bytes) {
   const numFmts = {};
   for (const n of st.getElementsByTagName('numFmt')) numFmts[n.getAttribute('numFmtId')] = n.getAttribute('formatCode');
   const fontOf = (f) => ({
-    name: attr(kid(f, 'name'), 'val', 'Calibri'), size: num(kid(f, 'sz'), 'val', 11),
+    name: attr(kid(f, 'name') || kid(f, 'rFont'), 'val', 'Calibri'), size: num(kid(f, 'sz'), 'val', 11),
     b: !!kid(f, 'b') && attr(kid(f, 'b'), 'val', '1') !== '0', i: !!kid(f, 'i') && attr(kid(f, 'i'), 'val', '1') !== '0',
     u: !!kid(f, 'u') && attr(kid(f, 'u'), 'val', 'single') !== 'none', s: !!kid(f, 'strike') && attr(kid(f, 'strike'), 'val', '1') !== '0',
     color: color(kid(f, 'color'), '000000'), vert: attr(kid(f, 'vertAlign'), 'val'),
@@ -651,6 +651,26 @@ const sumRows = sumCols;
 
 function fontCss(f, k = 1) { return cssFont(`${f.name}${f.b ? '-Bold' : ''}${f.i ? '-Italic' : ''}`, f.size * k).css; }
 
+// перенос по словам для текста с форматированием по частям: строки — списки кусков со своим шрифтом
+function wrapRuns(ctx, runs, width, k = 1) {
+  const toks = [];
+  for (const r of runs) for (const part of String(r.text).split(/(\r?\n|\s+)/)) if (part) toks.push({ text: part, font: r.font, br: /\n/.test(part) });
+  const lines = [[]]; let w = 0;
+  for (const t of toks) {
+    if (t.br) { lines.push([]); w = 0; continue; }
+    ctx.font = fontCss(t.font, k);
+    const tw = ctx.measureText(t.text).width;
+    const cur = lines[lines.length - 1];
+    if (cur.length && /\S/.test(t.text) && w + tw > width) { lines.push([]); w = 0; }
+    const ln = lines[lines.length - 1];
+    if (!ln.length && !/\S/.test(t.text)) continue;
+    const last = ln[ln.length - 1];
+    if (last && last.font === t.font) last.text += t.text; else ln.push({ text: t.text, font: t.font });
+    w += tw;
+  }
+  return lines.map((ln) => { const l = ln[ln.length - 1]; if (l) l.text = l.text.trimEnd(); return ln; });
+}
+
 function wrapLines(ctx, text, width, font) {
   const out = [];
   for (const para of String(text).split(/\r?\n/)) {
@@ -729,7 +749,7 @@ function drawText(ctx, d, xf, b, o) {
   if (xf.shrink && natural + pad * 2 > b.w) k = (b.w - pad * 2) / natural;
   // числа, не влезающие в ячейку, Excel показывает решётками
   if (d.isNum && !xf.wrap && natural * k + pad * 2 > b.w + 0.5) { runs.splice(0, runs.length, { text: '#'.repeat(Math.max(1, Math.floor((b.w - pad * 2) / (f.size * 0.55)))), font: f }); }
-  const lines = xf.wrap ? wrapLines(ctx, d.text, b.w - pad * 2 - ind, fontCss(f)).map((t) => [{ text: t, font: f }]) : [runs];
+  const lines = xf.wrap ? (d.runs ? wrapRuns(ctx, runs, b.w - pad * 2 - ind) : wrapLines(ctx, d.text, b.w - pad * 2 - ind, fontCss(f)).map((t) => [{ text: t, font: f }])) : [runs];
   const tot = lines.length * lineH * k;
   const asc = maxSize * k * 0.952; const desc = maxSize * k * 0.27;
   let y;

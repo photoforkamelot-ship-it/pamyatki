@@ -14,12 +14,12 @@ export function pdfjs() {
   return pdfjsP;
 }
 
-async function openJs(bytes) {
+export async function openJs(bytes) {
   const lib = await pdfjs();
   return lib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
 }
 
-function closeJs(d) {
+export function closeJs(d) {
   try {
     if (typeof d.destroy === 'function') d.destroy();
     else if (d.loadingTask) d.loadingTask.destroy();

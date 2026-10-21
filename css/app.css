@@ -669,3 +669,6 @@ input::selection, textarea::selection { background: #ffd60a; color: #000; }
 .pv-head { align-items: center; }
 .pv-head b { flex: 1; min-width: 0; }
 .pv-x { flex: none; }
+.mk-chips { display: flex; gap: 3px; flex-wrap: wrap; justify-content: center; }
+.mk { border: 0; border-radius: 8px; padding: 3px 6px; font: inherit; font-size: 11px; font-weight: 650; background: rgba(127,127,127,.15); color: var(--ink); cursor: pointer; }
+.mk.on { background: var(--accent); color: var(--accent-ink, #fff); }

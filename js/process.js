@@ -90,3 +90,57 @@ export async function buildJournal(coverBytes, bodyBytes, sheets = 90) {
   }
   return out.save({ useObjectStreams: true });
 }
+
+// ---------- страницы по регионам: метки «[УФО]», «[ЦФО, СФО]» в углу страницы ----------
+// marks = { "15": { r: ["СФО"], box: [x0, top, x1, bottom] } } — номер страницы с 1, рамка метки в пунктах от верхнего левого угла.
+// Страницы чужого региона выпадают, метки на оставшихся закрываются белым. Без региона в сеансе печатаются все страницы.
+export async function regionPages(bytes, marks, region) {
+  if (!marks || !Object.keys(marks).length) return bytes;
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+  const n = doc.getPageCount();
+  const drop = [];
+  for (let i = 0; i < n; i++) {
+    const m = marks[String(i + 1)];
+    if (!m) continue;
+    if (region && m.r && m.r.length && !m.r.includes(region)) { drop.push(i); continue; }
+    if (m.box) {
+      const p = doc.getPage(i);
+      const { height: H } = p.getSize();
+      const [x0, t, x1, b] = m.box;
+      p.drawRectangle({ x: x0, y: H - b, width: Math.max(x1 - x0, 46), height: b - t, color: rgb(1, 1, 1) });
+    }
+  }
+  for (const i of drop.reverse()) doc.removePage(i);
+  return doc.save();
+}
+
+// Найти метки в тексте страниц (если шрифт читается). Возвращает marks или null.
+export const REGION_RE = /\[\s*((?:[А-ЯЁ]{2,4}ФО)(?:\s*[,/;и]\s*[А-ЯЁ]{2,4}ФО)*)\s*\]/;
+export async function detectMarks(bytes) {
+  const { openJs, closeJs } = await import('./pdf.js');
+  const d = await openJs(bytes);
+  const out = {};
+  for (let i = 1; i <= d.numPages; i++) {
+    const page = await d.getPage(i);
+    const vp = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    const items = tc.items.filter((it) => it.str);
+    const text = items.map((it) => it.str).join('');
+    const m = text.match(REGION_RE);
+    if (m) {
+      const r = m[1].split(/\s*[,/;и]\s*/).map((x) => x.trim()).filter(Boolean);
+      // рамка: элементы текста, из которых состоит метка
+      const hit = items.filter((it) => /[\[\]]|[А-ЯЁ]{2,4}ФО/.test(it.str) && m[0].includes(it.str.trim().replace(/\s+/g, '')) );
+      let box = null;
+      if (hit.length) {
+        const xs = hit.map((it) => it.transform[4]), ys = hit.map((it) => vp.height - it.transform[5]);
+        const hgt = Math.max(...hit.map((it) => Math.abs(it.transform[3]) || 10));
+        box = [Math.min(...xs) - 2, Math.min(...ys) - hgt - 2, Math.max(...hit.map((it) => it.transform[4] + it.width)) + 2, Math.max(...ys) + 4];
+      }
+      out[String(i)] = { r, box };
+    }
+    page.cleanup();
+  }
+  closeJs(d);
+  return Object.keys(out).length ? out : null;
+}
