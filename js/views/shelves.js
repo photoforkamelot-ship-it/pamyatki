@@ -3,7 +3,7 @@ import { h, icon, uid, fmtDate, monthKey, clone } from '../util.js';
 import { S, update, sessionLabel, SHELF_KINDS } from '../store.js';
 import { openModal, confirmDlg, promptDlg, toast, withBusy, formDlg, menu } from '../ui.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
-import { deliver, excelPdf } from '../output.js';
+import { deliver, excelPdf, printFab } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
 import { setSheetsCells } from '../xlsx.js';
 import { getBytes } from '../files.js';
@@ -137,7 +137,6 @@ export function renderShelves(tab, root) {
       h('div', { class: 'toolbar' },
         h('button', { class: 'btn ghost sm', onClick: openArchive }, icon('archive'), 'Архив'),
         h('button', { class: 'btn ghost sm', disabled: !selectedCount, onClick: saveToArchive }, 'В архив'),
-        h('button', { class: 'btn primary sm grow', disabled: !selectedCount, onClick: printShelves }, icon('print'), `Печать${selectedCount ? ' · ' + selectedCount : ''}`),
       ),
       h('div', { class: 'toolbar' }, search,
         h('button', { class: 'btn ghost sm' + (onlySelected ? ' on' : ''), 'aria-pressed': onlySelected ? 'true' : 'false', onClick: () => { onlySelected = !onlySelected; update(() => {}); } }, 'Выбранные'),
@@ -148,6 +147,7 @@ export function renderShelves(tab, root) {
       h('button', { class: 'btn ghost sm', onClick: addGroup }, icon('plus'), 'Группа'),
       selectedCount ? h('button', { class: 'btn ghost sm', onClick: async () => { if (await confirmDlg('Сбросить выбор?', 'Снимутся все отмеченные категории и опции.', 'Сбросить')) update(() => { cur().items = {}; }); } }, 'Сбросить выбор') : null,
     ),
+    printFab(() => (selectedCount ? printShelves() : toast('Отметьте категории для печати')), selectedCount),
   );
 }
 

@@ -4,7 +4,7 @@
 import { h, icon, uid } from '../util.js';
 import { S, update, sessionLabel } from '../store.js';
 import { confirmDlg, toast, withBusy, chipSelect, formDlg, choiceDlg, menu, promptDlg, pickFiles } from '../ui.js';
-import { deliver, excelPdf } from '../output.js';
+import { deliver, excelPdf, printFab } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
 import { book, regionsAll, hasTemplate, resetToTemplate, isHidden, toggleHidden, sectionsOf, sectionOf, insertInSection, moveRow, contactsXlsx, absorbLegacy, parseVcf, parseText, normPhones } from '../contactbook.js';
 import { personDlg } from './persondlg.js';
@@ -94,9 +94,7 @@ export function renderPeople(tab, root) {
         own ? `Это контакты ${region} для объекта ${sessionLabel(S.session)}. Правки сохранятся и для следующего объекта в ${region}${hiddenN ? `; скрыто на эту печать: ${hiddenN}` : ''}. ` : `Так откроются контакты для следующего объекта в ${region}. `,
         hasTemplate(region) ? h('button', { onClick: async () => { if (await confirmDlg('Вернуть как в шаблоне?', `Контакты ${region} станут такими, как в исходном файле «Контакты сотрудников». Добавленные и исправленные строки пропадут.`, 'Вернуть', 'Отмена', true)) resetToTemplate(region); } }, 'Вернуть как в шаблоне') : null,
       ),
-      h('div', { class: 'toolbar' }, search,
-        h('button', { class: 'btn primary sm', disabled: !rows.length, onClick: () => printRegion(region) }, icon('print'), 'Печать'),
-      ),
+      h('div', { class: 'toolbar' }, search),
       h('div', { class: 'row-actions' },
         h('button', { class: 'btn ghost sm', onClick: () => importFromPhone(region) }, icon('plus'), 'Из контактов телефона'),
         h('button', { class: 'btn ghost sm', onClick: () => importFromText(region) }, 'Вставить текстом'),
@@ -104,6 +102,7 @@ export function renderPeople(tab, root) {
       ),
     ),
     listBox,
+    rows.length ? printFab(() => printRegion(region)) : null,
   );
 }
 

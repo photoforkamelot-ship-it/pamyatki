@@ -4,7 +4,7 @@ import { S, update, activeFile, setActiveFile, makeDoc, dependValue, DEPENDS, se
 import { openModal, confirmDlg, choiceDlg, promptDlg, pickFiles, toast, withBusy, menu, toggle } from '../ui.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
 import { buildPrint, renderThumbs, diffText, blocksToPdf } from '../pdf.js';
-import { deliver, docName, excelPdf } from '../output.js';
+import { deliver, docName, excelPdf, printFab } from '../output.js';
 import { GENERATORS, baseValues, templateRuns } from '../generators.js';
 import { fillDocx, isDocx } from '../docx.js';
 import { renderBlocks } from '../pages.js';
@@ -85,8 +85,7 @@ export function renderDocsTab(tab, root, { top } = {}) {
     ),
   );
   // плавающий принтер: список того, что уйдёт в печать, и предпросмотр общего файла
-  const fab = h('button', { class: 'print-fab' + (selectedCount ? '' : ' empty'), 'aria-label': `Печать: выбрано ${selectedCount}`, onClick: () => printSheet(tab) },
-    icon('print'), selectedCount ? h('span', { class: 'print-fab-n' }, String(selectedCount)) : null);
+  const fab = printFab(() => printSheet(tab), selectedCount);
 
   const banner = stale.length && S.settings.showBadges
     ? h('button', { class: 'banner stale', onClick: () => runUpdateWizard(tab, stale) },
@@ -408,7 +407,7 @@ async function wordOutputs(doc) {
 }
 
 // Несколько файлов — одним архивом
-async function deliverFiles(all, archiveName) {
+async function deliverFiles(all, archiveName, opts = {}) {
   // PDF идут отдельными файлами рядом с Word (или архивом)
   const pdfs = all.filter((f) => f.pdf);
   const files = all.filter((f) => !f.pdf);
@@ -417,11 +416,11 @@ async function deliverFiles(all, archiveName) {
   if (!files.length) {
     if (!pdfs.length) return;
     const [first, ...rest] = also;
-    return deliver(first.bytes, first.filename, { also: rest });
+    return deliver(first.bytes, first.filename, { also: rest, ...opts });
   }
   if (files.length === 1) {
     const f = files[0];
-    return deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { word: true, also, note: f.missing && f.missing.length ? 'Не заполнены метки: ' + f.missing.join(', ') : '' });
+    return deliver(f.bytes, `${f.name} — ${sessionLabel(S.session)}`, { word: true, also, ...opts, note: f.missing && f.missing.length ? 'Не заполнены метки: ' + f.missing.join(', ') : '' });
   }
   const JSZip = await ensureZip();
   const zip = new JSZip();
@@ -433,7 +432,7 @@ async function deliverFiles(all, archiveName) {
     zip.file(n + '.docx', f.bytes);
   }
   const bytes = await zip.generateAsync({ type: 'uint8array' });
-  return deliver(bytes, archiveName, { zip: true, also, note: `В архиве ${files.length} файлов Word.` });
+  return deliver(bytes, archiveName, { zip: true, also, ...opts, note: `В архиве ${files.length} файлов Word.` });
 }
 async function ensureZip() {
   if (window.JSZip) return window.JSZip;
@@ -552,17 +551,18 @@ async function buildOutputs(tab, list, { single = false, title } = {}) {
   return out;
 }
 
-async function deliverOutputs(tab, out, { single = false, title } = {}) {
+async function deliverOutputs(tab, out, { single = false, title, built } = {}) {
+  const noPreview = !!built;
   let any = false;
   if (out.wordFiles.length) {
     update(() => { out.words.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); doc.skippedSession = null; }); });
-    await deliverFiles(out.wordFiles, `${title || tab.title} — Word — ${sessionLabel(S.session)}`);
+    await deliverFiles(out.wordFiles, `${title || tab.title} — Word — ${sessionLabel(S.session)}`, { noPreview });
     any = true;
   }
   if (out.main) {
     const name = single ? out.rest[0].doc.title : `${title || tab.title} — ${sessionLabel(S.session)} — ${fmtDate(new Date())}`;
     update(() => { out.rest.forEach(({ doc }) => { doc.lastPrinted = new Date().toISOString(); if (!single) doc.skippedSession = null; }); });
-    await deliver(out.main, name, { duplex: out.rest.some(({ sec }) => sectionDuplex(tab, sec)) });
+    await deliver(out.main, name, { duplex: out.rest.some(({ sec }) => sectionDuplex(tab, sec)), noPreview });
     any = true;
   }
   return any;

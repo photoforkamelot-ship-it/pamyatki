@@ -6,7 +6,7 @@ import { S, update, emit, CONTACT_LISTS, sessionLabel, activeFile, setActiveFile
 import { openModal, toast, withBusy, promptDlg, formDlg, confirmDlg } from '../ui.js';
 import { driveOn, listFolder, fileInfo, fetchExternal } from '../drive.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
-import { deliver } from '../output.js';
+import { deliver, printFab, printChooser, deliverBundle } from '../output.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
 import { openExternal } from '../tg.js';
 import { tabSettingsDlg } from './settings.js';
@@ -176,6 +176,25 @@ export function renderMaterials(tab, root) {
     );
     root.append(card);
   }
+  // принтер: выбрать, какие скачанные файлы и список группы отправить — с предпросмотром
+  const printable = files.filter((f) => f.meta && !isNewer(f) && ['pdf', 'docx', 'xlsx'].includes(extOf(f)));
+  if (printable.length || S.materials.team) root.append(printFab(() => printChooser({
+    items: [...printable.map((f) => ({ id: f.id, title: f.name.replace(/\.(pdf|docx|xlsx)$/i, ''), fmt: extOf(f).toUpperCase() })), ...(S.materials.team ? [{ id: '__team', title: 'Рабочая группа по открытию', fmt: 'PDF' }] : [])],
+    selected: S.materials.team ? ['__team'] : printable.slice(0, 1).map((f) => f.id),
+    onPrint: (ids) => printMaterials(ids, printable),
+  })));
+}
+
+async function printMaterials(ids, printable) {
+  try {
+    const list = [];
+    for (const id of ids) {
+      if (id === '__team') { list.push({ bytes: await teamPdf(), filename: 'Рабочая группа по открытию — ' + sessionLabel(S.session), kind: 'pdf' }); continue; }
+      const f = printable.find((x) => x.id === id);
+      if (f) list.push({ bytes: await getBytes(f.meta), filename: f.name.replace(/\.(pdf|docx|xlsx)$/i, ''), kind: extOf(f) });
+    }
+    await deliverBundle(list);
+  } catch (e) { toast('Ошибка: ' + e.message, 'warn'); }
 }
 
 function fileRow(f) {
@@ -222,13 +241,13 @@ function teamBlock() {
     h('ul', { class: 'plain-list' }, rows.map((r) => h('li', null, h('strong', null, r.name), r.phone ? ' — ' + r.phone : h('span', { class: 'muted' }, ' — нет телефона'), r.source ? h('span', { class: 'cap' }, ' (' + r.source + ')') : null))),
     h('div', { class: 'row-actions' },
       h('button', { class: 'btn ghost sm', onClick: async () => { try { await navigator.clipboard.writeText(text()); toast('Список скопирован'); } catch (e) { promptDlg('Скопируйте список', { value: text(), multiline: true, okLabel: 'Готово' }); } } }, 'Скопировать'),
-      h('button', { class: 'btn ghost sm', onClick: printTeam }, icon('print'), 'Печать'),
+      h('button', { class: 'btn ghost sm', onClick: async () => deliver(await teamPdf(), 'Рабочая группа по открытию — ' + sessionLabel(S.session)) }, icon('print'), 'Печать'),
     ),
     h('p', { class: 'cap' }, `Из документа от ${fmtDate(t.at)}. Список обновляется вместе с «Порядком открытия».`),
   );
 }
 
-async function printTeam() {
+async function teamPdf() {
   const rows = teamRows();
   const blocks = [
     { t: 'h1', text: 'Рабочая группа по открытию магазина', sub: sessionLabel(S.session) },
@@ -239,7 +258,7 @@ async function printTeam() {
     const { pngs, size } = await blocksToPdf(blocks);
     return buildPrint({ parts: [{ title: 'Рабочая группа', pngs, size, duplex: false }] });
   });
-  return deliver(bytes, 'Рабочая группа по открытию — ' + sessionLabel(S.session));
+  return bytes;
 }
 
 async function folderDlg() {

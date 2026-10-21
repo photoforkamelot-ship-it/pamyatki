@@ -3,7 +3,7 @@ import { h, icon, uid, fmtDate } from '../util.js';
 import { S, update, sessionLabel } from '../store.js';
 import { promptDlg, confirmDlg, menu, withBusy, formDlg } from '../ui.js';
 import { blocksToPdf, buildPrint } from '../pdf.js';
-import { deliver } from '../output.js';
+import { deliver, printFab } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
 
 let editMode = false;
@@ -51,13 +51,13 @@ export function renderPlan(tab, root) {
         h('button', { class: 'btn ghost sm' + (editMode ? ' on' : ''), 'aria-pressed': editMode ? 'true' : 'false', onClick: () => { editMode = !editMode; update(() => {}); } }, icon('pencil'), editMode ? 'Готово' : 'Править'),
         h('button', { class: 'btn ghost sm', onClick: () => { const tops = all(S.plan.items).filter((x) => x.children && x.children.length && x.meta); const any = tops.some((x) => !collapsed.has(x.id)); tops.forEach((x) => (any ? collapsed.add(x.id) : collapsed.delete(x.id))); update(() => {}); } }, 'Свернуть / развернуть'),
         h('button', { class: 'btn ghost sm', onClick: importOutline }, 'Вставить списком'),
-        h('button', { class: 'btn primary sm grow', disabled: !flat.length, onClick: printPlan }, icon('print'), 'PDF'),
       ),
     ),
     h('section', { class: 'card glass' },
       flat.length ? h('div', { class: 'tree' }, flat.map((x, idx) => row(x, idx, flat, done))) : h('p', { class: 'empty' }, 'План пуст. Загрузите стартовый пакет в настройках или вставьте план списком.'),
       editMode ? h('button', { class: 'btn ghost dashed', onClick: () => addItem(S.plan.items) }, icon('plus'), 'Раздел') : null,
     ),
+    flat.length ? printFab(printPlan) : null,
   );
 }
 

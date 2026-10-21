@@ -5,7 +5,7 @@ import { S, update, makeDoc } from '../store.js';
 import { pickFiles, withBusy, toast, confirmDlg, promptDlg, openModal, chipSelect, choiceDlg, menu } from '../ui.js';
 import { analyze, storeAnalyzed, getBytes, dropFile } from '../files.js';
 import { blocksToPdf, buildPrint, renderThumbs } from '../pdf.js';
-import { deliver } from '../output.js';
+import { deliver, printFab } from '../output.js';
 import { tabSettingsDlg } from './settings.js';
 
 export const CONTRACT_TYPES = [
@@ -54,7 +54,7 @@ export function renderContracts(tab, root) {
         onChange: (v) => { currentCity = v || currentCity; update(() => {}); },
         onAdd: async () => { const c = await promptDlg('Город', { label: 'Название города' }); if (c) { currentCity = c; update(() => { cityData(c); }); } },
       }),
-      currentCity ? h('div', { class: 'toolbar' }, h('button', { class: 'btn primary sm grow', onClick: () => printOsp(tab, currentCity, osp) }, icon('print'), `Печать для ОСП ${osp}`)) : null,
+      currentCity ? printFab(() => printOsp(tab, currentCity, osp)) : null,
       currentCity && currentCity !== S.session.city ? h('p', { class: 'note warn' }, `Город сеанса — ${S.session.city || 'не указан'}. Допсоглашения ниже относятся к ОСП ${osp}.`) : null,
     ),
   );

@@ -662,3 +662,10 @@ input::selection, textarea::selection { background: #ffd60a; color: #000; }
 .pv-page canvas { border-radius: 4px; box-shadow: 0 1px 6px rgba(0,0,0,.25); background: #fff; max-width: 100%; height: auto !important; }
 .pv-page figcaption { font-size: 11px; opacity: .6; }
 .pv-drop { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 14px; }
+.pv-file { border-top: 1px solid var(--line); padding-top: 4px; transition: opacity .2s; }
+.pv-file:first-child { border-top: 0; }
+.pv-file.off { opacity: .35; }
+.pv-file.off .pv-grid { display: none !important; }
+.pv-head { align-items: center; }
+.pv-head b { flex: 1; min-width: 0; }
+.pv-x { flex: none; }
