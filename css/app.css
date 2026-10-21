@@ -359,7 +359,7 @@ details.opt > summary { cursor: pointer; font-weight: 650; padding: 10px 0; colo
 }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 20px 14px 4px 20px; }
 .sheet-title { margin: 0; font-size: 20px; font-weight: 720; letter-spacing: -0.01em; }
-.sheet-body { padding: 8px 20px 12px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.sheet-body { flex: 1 1 auto; min-height: 0; padding: 8px 20px 12px; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .sheet-foot { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; padding: 10px 16px 16px; }
 .sheet-foot .btn { flex: 1 1 auto; }
 @media (min-width: 700px) { .sheet-foot .btn { flex: 0 0 auto; } }
@@ -651,7 +651,7 @@ input::selection, textarea::selection { background: #ffd60a; color: #000; }
 .print-fab-n { position: absolute; top: -4px; right: -4px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: var(--red); color: #fff; font-size: 12px; font-weight: 750; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 2px var(--bg, #fff); }
 @media (min-width: 900px) { .print-fab { right: calc(50% - 420px); } }
 .ps-sec { font-size: 12px; text-transform: uppercase; letter-spacing: .5px; opacity: .6; margin: 12px 0 4px; }
-.ps-row { display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
+.ps-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 4px; border-bottom: 1px solid var(--line); cursor: pointer; }
 .ps-row.off .ps-t { opacity: .5; }
 .ps-t { flex: 1; min-width: 0; font-size: 15px; }
 .ps-f { font-size: 12px; opacity: .65; white-space: nowrap; }
